@@ -1031,7 +1031,7 @@ class TimeSeries:
         U=0.
         for ii in range(0,self.Nf):
             x1 = x-[self.x0, self.y0, self.z0]
-            U+= vel_mode(x1, t-self.t0, self.kDir[ii],self.ki[ii], self.omega[ii],self.phi[ii],self.ai[ii],self.mwl,self.depth,self.g,self.vDir)
+            U+= vel_mode(x1, t-self.t0, self.kDir[ii],self.ki[ii],self.omega[ii],self.phi[ii],self.ai[ii],self.mwl,self.depth,self.g, self.vDir)
         return U
 
     def findWindow(self,t):
@@ -1075,12 +1075,124 @@ class TimeSeries:
         ki = self.decompose_window[Nw][5]
         t0 = self.windows_rec[Nw][0,0]
         U=0.
-        for ii in range(0,self.Nf):
+        for ii in range(0, self.Nf):
             x1 = x-[self.x0, self.y0, self.z0]
-            U+= vel_mode(x1, t-t0, kDir[ii],ki[ii],omega[ii],phi[ii],ai[ii],self.mwl,self.depth,self.g,self.vDir)
+            U+= vel_mode(x1, t-t0, kDir[ii], ki[ii], omega[ii], phi[ii], ai[ii], self.mwl, self.depth, self.g, self.vDir)
         return U
 
 
+
+
+
+
+
+class NonlinearCorrectionWriteSeries(RandomWaves):
+    def __init__(self,
+                 Tp,
+                 Hs,
+                 mwl,#m significant wave height
+                 depth ,           #m depth
+                 waveDir,
+                 g,      #peak  frequency
+                 N,
+                 bandFactor,         #accelerationof gravity
+                 spectName ,# random words will result in error and return the available spectra 
+                 spectral_params =  None, #JONPARAMS = {"gamma": 3.3, "TMA":True,"depth": depth} 
+                 phi=None
+                 )
+    RandomWaves.__init__(self,Tp,Hs,mwl,depth,waveDir,g,N,bandFactor,spectName,spectral_params,phi)
+            
+
+
+
+
+    def wwi_2ndOrder(self,x,t,amplitude,kAbs,depth):
+        ai_2nd = (amplitude**2*kAbs*(2+3/sinh(kAbs*depth)**2))/4*tanh(kAbs*depth)
+        wwi_2ndOrder = eta_mode(x,t,2*kDir,2*omega,2*phi,ai_2nd)
+        return wwi_2ndOrder
+
+
+
+        #super-harmonic term
+    def wwi_short(self,x,t,omega1,omega2,kDir1,kDir2,kAbs1,kAbs2,amplitude1,amplitude2,depth,g):
+        Dp = (omega1+omega2)**2 - g*(kAbs1+kAbs2)*tanh((kAbs1+kAbs2)*depth)
+        Bp = (omega1**2+omega2**2)/(2*g) - ((omega1*omega2)/(2*g))*(1-(cos(kDir1-kDir2)/(tanh(kAbs1*depth)*tanh(kAbs2*depth))))*(((omega1+omega2)**2 + g*(kAbs1+kAbs2)*tanh((kAbs1+kAbs2)*depth))/Dp) + ((omega1+omega2)/(2*g*Dp))*((omega1**3/sinh(kAbs1*depth)**2) + (omega2**3/sinh(kAbs2*depth)**2))	
+        ai_short = amplitude1*amplitude2*Bp
+        wwi_short = eta_mode(x,t,kDir1+kDir2,omega1+omega2,phi+phi,ai_short)
+        return wwi_short
+    
+    
+    
+	#sub-harmonic term	
+    def wwi_long(self,x,t,omega1,omega2,kDir1,kDir2,kAbs1,kAbs2,amplitude1,amplitude2,depth,g):	
+        Dm = (omega1-omega2)**2 - g*(kAbs1-kAbs2)*tanh((kAbs1-kAbs2)*depth)	
+        Bm = (omega1**2+omega2**2)/(2*g) + ((omega1*omega2)/(2*g))*(1+(cos(kDir1-kDir2)/(tanh(kAbs1*depth)*tanh(kAbs2*depth))))*(((omega1-omega2)**2 + g*(kAbs1-kAbs2)*tanh((kAbs1-kAbs2)*depth))/Dm) + ((omega1-omega2)/(2*g*Dm))*((omega1**3/sinh(kAbs1*depth)**2) - (omega2**3/sinh(kAbs2*depth)**2))
+        ai_long = amplitude1*amplitude2*Bm 
+        wwi_long = eta_mode(x,t,kDir1-kDir2,omega1-omega2,phi-phi,ai_long)	
+        return wwi_long
+    
+
+
+
+
+    def wwi_setUp(self,x,t,amplitude,kAbs,depth):
+        wwi_setUp = (amplitude**2*kAbs)/(2*sinh(2*kAbs*depth))
+        return wwi_setUp
+    
+            
+
+    def eta_linear(x,t):
+        return RandomWaves.eta(x,t)
+    
+            
+
+    def eta_2ndOrder(x,t):
+        Eta2nd = 0.
+        for i in range(0,self.N):
+            ai_2nd = (self.ai[i]**2*self.ki[i]*(2+3/sinh(self.ki[i]*depth)**2))/4*tanh(ki[i]*depth)
+            wwi_2ndOrder = eta_mode(x,t,2*self.kDir[i],2*self.omega[i],2*self.phi[i],ai_2nd)
+            Eta2nd += wwi_2ndOrder  #self.wwi_2ndOrder(x,t,self.ai[i],self.ki[i],self.depth)
+        return Eta2nd
+
+
+
+
+            
+    def eta_short(x,t):
+        Etashort = 0.
+        for i in range(0,self.N-1):
+            for j in range(i+1,self.N):
+                Etashort += self.wwi_short(x,t,self.omega[i],self.omega[j],self.kDir[i],self.kDir[j],self.ki[i],self.ki[j],self.ai[i],self.ai[j],self.depth,self.g)
+        return Etashort
+
+
+
+
+
+    def eta_long(x,t):
+        Etalong = 0.
+        for i in range(0,self.N-1):
+            for j in range(i+1,self.N):
+                Etalong += self.wwi_long(x,t,self.omega[i],self.omega[j],self.kDir[i],self.kDir[j],self.ki[i],self.ki[j],self.ai[i],self.ai[j],self.depth,self.g)
+        return Etalong
+
+
+
+    def eta_setUp(x,t):
+        EtasetUp = 0.
+        for i in range(0,self.N):
+            EtasetUp += self.wwi_setUp(x,t,self.ai[i],self.ki[i],self.depth)
+        return EtasetUp
+
+
+    def eta_overall(x,t,setup = False):
+        Etaoverall = 0.
+        for i in range(0,self.N):
+            Etaoverall += eta_linear(x,t) + eta_2ndOrder(x,t) + eta_short(x,t) + eta_long(x,t)
+            if(setup):
+                Etaoverall-= eta_setUp(x,t)
+        return Etaoverall
+        
 
 
 
