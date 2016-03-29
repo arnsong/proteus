@@ -1084,115 +1084,118 @@ class TimeSeries:
 
 
 
-
-
+#class NonelinearCorrectionWriteSeries(RandomWaves,TimeSeries)
 class NonlinearCorrectionWriteSeries(RandomWaves):
     def __init__(self,
-                 Tp,
-                 Hs,
-                 mwl,#m significant wave height
-                 depth ,           #m depth
-                 waveDir,
-                 g,      #peak  frequency
-                 N,
-                 bandFactor,         #accelerationof gravity
-                 spectName ,# random words will result in error and return the available spectra 
-                 spectral_params =  None, #JONPARAMS = {"gamma": 3.3, "TMA":True,"depth": depth} 
-                 phi=None
-                 )
-    RandomWaves.__init__(self,Tp,Hs,mwl,depth,waveDir,g,N,bandFactor,spectName,spectral_params,phi)
-            
+                 Tp,                      #wave period
+                 Hs,                      #significant wave height
+                 mwl,                     #mean water level
+                 depth,                   #water depth          
+                 waveDir,                 #wave direction vector with three components
+                 g,                       #gravitational accelaration vector with three components      
+                 N,                       #number of frequency bins
+                 bandFactor,              #width factor for band around peak frequency fp       
+                 spectName,               #random words will result in error and return the available spectra 
+                 spectral_params=None,    #JONPARAMS = {"gamma": 3.3, "TMA":True,"depth": depth} 
+                 phi=None                 #array of component phases
+                 ):
+        RandomWaves.__init__(self,Tp,Hs,mwl,depth,waveDir,g,N,bandFactor,spectName,spectral_params,phi)
 
+        
 
-
-
-    def wwi_2ndOrder(self,x,t,amplitude,kAbs,depth):
-        ai_2nd = (amplitude**2*kAbs*(2+3/sinh(kAbs*depth)**2))/4*tanh(kAbs*depth)
-        wwi_2ndOrder = eta_mode(x,t,2*kDir,2*omega,2*phi,ai_2nd)
-        return wwi_2ndOrder
-
-
-
-        #super-harmonic term
-    def wwi_short(self,x,t,omega1,omega2,kDir1,kDir2,kAbs1,kAbs2,amplitude1,amplitude2,depth,g):
-        Dp = (omega1+omega2)**2 - g*(kAbs1+kAbs2)*tanh((kAbs1+kAbs2)*depth)
-        Bp = (omega1**2+omega2**2)/(2*g) - ((omega1*omega2)/(2*g))*(1-(cos(kDir1-kDir2)/(tanh(kAbs1*depth)*tanh(kAbs2*depth))))*(((omega1+omega2)**2 + g*(kAbs1+kAbs2)*tanh((kAbs1+kAbs2)*depth))/Dp) + ((omega1+omega2)/(2*g*Dp))*((omega1**3/sinh(kAbs1*depth)**2) + (omega2**3/sinh(kAbs2*depth)**2))	
-        ai_short = amplitude1*amplitude2*Bp
-        wwi_short = eta_mode(x,t,kDir1+kDir2,omega1+omega2,phi+phi,ai_short)
-        return wwi_short
-    
-    
-    
-	#sub-harmonic term	
-    def wwi_long(self,x,t,omega1,omega2,kDir1,kDir2,kAbs1,kAbs2,amplitude1,amplitude2,depth,g):	
-        Dm = (omega1-omega2)**2 - g*(kAbs1-kAbs2)*tanh((kAbs1-kAbs2)*depth)	
-        Bm = (omega1**2+omega2**2)/(2*g) + ((omega1*omega2)/(2*g))*(1+(cos(kDir1-kDir2)/(tanh(kAbs1*depth)*tanh(kAbs2*depth))))*(((omega1-omega2)**2 + g*(kAbs1-kAbs2)*tanh((kAbs1-kAbs2)*depth))/Dm) + ((omega1-omega2)/(2*g*Dm))*((omega1**3/sinh(kAbs1*depth)**2) - (omega2**3/sinh(kAbs2*depth)**2))
-        ai_long = amplitude1*amplitude2*Bm 
-        wwi_long = eta_mode(x,t,kDir1-kDir2,omega1-omega2,phi-phi,ai_long)	
-        return wwi_long
-    
-
-
-
-
-    def wwi_setUp(self,x,t,amplitude,kAbs,depth):
-        wwi_setUp = (amplitude**2*kAbs)/(2*sinh(2*kAbs*depth))
-        return wwi_setUp
-    
-            
-
-    def eta_linear(x,t):
+    def eta_linear(self,x,t):
         return RandomWaves.eta(x,t)
-    
-            
 
-    def eta_2ndOrder(x,t):
+
+
+    def eta_2ndOrder(self,x,t):
         Eta2nd = 0.
         for i in range(0,self.N):
-            ai_2nd = (self.ai[i]**2*self.ki[i]*(2+3/sinh(self.ki[i]*depth)**2))/4*tanh(ki[i]*depth)
+            ai_2nd = (self.ai[i]**2*self.ki[i]*(2+3/sinh(self.ki[i]*self.depth)**2))/(4*tanh(self.ki[i]*self.depth))
             wwi_2ndOrder = eta_mode(x,t,2*self.kDir[i],2*self.omega[i],2*self.phi[i],ai_2nd)
-            Eta2nd += wwi_2ndOrder  #self.wwi_2ndOrder(x,t,self.ai[i],self.ki[i],self.depth)
+            Eta2nd += wwi_2ndOrder  
         return Eta2nd
 
 
 
-
-            
-    def eta_short(x,t):
+    #free surface elevation due to short-crested waves        
+    def eta_short(self,x,t):
         Etashort = 0.
         for i in range(0,self.N-1):
             for j in range(i+1,self.N):
-                Etashort += self.wwi_short(x,t,self.omega[i],self.omega[j],self.kDir[i],self.kDir[j],self.ki[i],self.ki[j],self.ai[i],self.ai[j],self.depth,self.g)
+                Dp = (self.omega[i]+self.omega[j])**2 - self.g*(self.ki[i]+self.ki[j])*tanh((self.ki[i]+self.ki[j])*self.depth)
+                Bp = (self.omega[i]**2+self.omega[j]**2)/(2*self.g) - ((self.omega[i]*self.omega[j])/(2*self.g))*(1-(cos(self.kDir[i]-self.kDir[j])/(tanh(self.ki[i]*self.depth)*tanh(self.ki[j]*self.depth))))*(((self.omega[i]+self.omega[j])**2 + self.g*(self.ki[i]+self.ki[j])*tanh((self.ki[i]+self.ki[j])*self.depth))/Dp) + ((self.omega[i]+self.omega[j])/(2*self.g*Dp))*((self.omega[i]**3/sinh(self.ki[i]*self.depth)**2) + (self.omega[j]**3/sinh(self.ki[j]*self.depth)**2))	
+                ai_short = self.ai[i]*self.ai[j]*Bp
+                wwi_short = eta_mode(x,t,self.kDir[i]+self.kDir[j],self.omega[i]+self.omega[j],self.phi[i]+self.phi[j],ai_short)
+                Etashort += wwi_short
         return Etashort
 
 
 
-
-
-    def eta_long(x,t):
+    #free surface elevation due to high-crested waves
+    def eta_long(self,x,t):
         Etalong = 0.
         for i in range(0,self.N-1):
             for j in range(i+1,self.N):
-                Etalong += self.wwi_long(x,t,self.omega[i],self.omega[j],self.kDir[i],self.kDir[j],self.ki[i],self.ki[j],self.ai[i],self.ai[j],self.depth,self.g)
+                Dm = (self.omega[i]-self.omega[j])**2 - self.g*(self.ki[i]-self.ki[j])*tanh((self.ki[i]-self.ki[j])*self.depth)	
+                Bm = (self.omega[i]**2+self.omega[j]**2)/(2*self.g) + ((self.omega[i]*self.omega[j])/(2*self.g))*(1+(cos(self.kDir[i]-self.kDir[j])/(tanh(self.ki[i]*self.depth)*tanh(self.ki[j]*self.depth))))*(((self.omega[i]-self.omega[j])**2 + self.g*(self.ki[i]-self.ki[j])*tanh((self.ki[i]-self.ki[j])*self.depth))/Dm) + ((self.omega[i]-self.omega[j])/(2*self.g*Dm))*((self.omega[i]**3/sinh(self.ki[i]*self.depth)**2) - (self.omega[j]**3/sinh(self.ki[j]*self.depth)**2))
+                ai_long = self.ai[i]*self.ai[j]*Bm 
+                wwi_long = eta_mode(x,t,self.kDir[i]-self.kDir[j],self.omega[i]-self.omega[j],self.phi[i]-self.phi[j],ai_long)
+                Etalong += wwi_long
         return Etalong
 
 
 
-    def eta_setUp(x,t):
+    def eta_setUp(self,x,t):
         EtasetUp = 0.
         for i in range(0,self.N):
-            EtasetUp += self.wwi_setUp(x,t,self.ai[i],self.ki[i],self.depth)
+            wwi_setUp = (self.ai[i]**2*self.ki[i])/(2*sinh(2*self.ki[i]*self.depth))
+            EtasetUp += wwi_setUp
         return EtasetUp
 
 
-    def eta_overall(x,t,setup = False):
+
+    #overall free surface elevation
+    def eta_overall(self,x,t,setUp=False):
         Etaoverall = 0.
+        self.setUp = setUp
         for i in range(0,self.N):
-            Etaoverall += eta_linear(x,t) + eta_2ndOrder(x,t) + eta_short(x,t) + eta_long(x,t)
-            if(setup):
-                Etaoverall-= eta_setUp(x,t)
+            Etaoverall += self.eta_linear(x,t) + self.eta_2ndOrder(x,t) + self.eta_short(x,t) + self.eta_long(x,t) #need i to be used inside the for loop ???
+            if self.setUp:    # or the definition should be ---> if setUp:  ???
+                Etaoverall -= self.eta_setUp(x,t)
+        timelst=np.linspace(0, self.N, self.N)
+        timeSeries = open("Time_Series_File.csv", "w")
+        for time in range(len(timelst)):
+            timeSeries[:,0].write(str(time)+"\n")
+            timeSeries[:,1].write(str(Etaoverall[time])+"\n")  # write(eta_overall(x,t)+"\n")
+        timeSeries.close()
         return Etaoverall
-        
 
 
 
+    """timelst=np.linspace(0, 100, )
+    timeSeries = open("Time_Series_File.csv", "w")
+    for i in range(len(timelst)):
+        t=i
+        timeSeries[:,0].write(t+"\n")
+        timeSeries[:,1].write(Etaoverall[i]+"\n")  # write(eta_overall(x,t)+"\n")
+    timeSeries.close()
+"""
+
+    #def __init__(self,
+    #             timeSeriesFile,
+    #             skiprows,
+    #             timeSeriesPosition,
+    #             depth,
+    #             N,
+    #             mwl,
+    #             waveDir,
+    #             g,
+    #             rec_direct=True,
+    #             window_params=None
+    #             ):
+    #    TimeSeries.__init__(self,timeSeriesFile,skiprows,timeSeriesPosition,depth,N,mwl,waveDir,g,rec_direct=True,window_params=None)
+    
+    
+    #self.timeSeriesFile = timeSeries     #or should be defined as ---> self.timeSeriesFile = "Time_Series_File.csv"
+    
