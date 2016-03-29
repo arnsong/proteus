@@ -1096,12 +1096,16 @@ class NonlinearCorrectionWriteSeries(RandomWaves):
                  N,                       #number of frequency bins
                  bandFactor,              #width factor for band around peak frequency fp       
                  spectName,               #random words will result in error and return the available spectra 
+                 tInterval, 
                  spectral_params=None,    #JONPARAMS = {"gamma": 3.3, "TMA":True,"depth": depth} 
-                 phi=None                 #array of component phases
+                 phi=None                #array of component phases
                  ):
         RandomWaves.__init__(self,Tp,Hs,mwl,depth,waveDir,g,N,bandFactor,spectName,spectral_params,phi)
-
-        
+        self.tStart = tInterval[0]
+        self.tEnd = tInterval[1]
+        self.dtStep = Tp/48. # To be checked with APO, TAP
+        self.Nseries = int((self.tEnd - self.tStart)/self.dtStep)
+        self.dtStep = (self.tEnd - self.tStart)/self.Nseries
 
     def eta_linear(self,x,t):
         return RandomWaves.eta(x,t)
@@ -1157,19 +1161,36 @@ class NonlinearCorrectionWriteSeries(RandomWaves):
 
     #overall free surface elevation
     def eta_overall(self,x,t,setUp=False):
-        Etaoverall = 0.
-        self.setUp = setUp
-        for i in range(0,self.N):
-            Etaoverall += self.eta_linear(x,t) + self.eta_2ndOrder(x,t) + self.eta_short(x,t) + self.eta_long(x,t) #need i to be used inside the for loop ???
-            if self.setUp:    # or the definition should be ---> if setUp:  ???
-                Etaoverall -= self.eta_setUp(x,t)
-        timelst=np.linspace(0, self.N, self.N)
-        timeSeries = open("Time_Series_File.csv", "w")
-        for time in range(len(timelst)):
-            timeSeries[:,0].write(str(time)+"\n")
-            timeSeries[:,1].write(str(Etaoverall[time])+"\n")  # write(eta_overall(x,t)+"\n")
-        timeSeries.close()
+        Etaoverall = self.eta_linear(x,t) + self.eta_2ndOrder(x,t) + self.eta_short(x,t) + self.eta_long(x,t) #need i to be used inside the for loop ???
+        if setUp:   
+            Etaoverall -= self.eta_setUp(x,t)
         return Etaoverall
+
+    def eta_write(self,x0,filename,mode="all",setUp=False):
+        timelst=np.linspace(0, self.tEnd, self.Nseries)
+        timeSeries = np.zeros((self.Nseries,2),)
+        timeSeries[:,0] = timelst
+        for i in range(len(timelst)):
+            time = timeSeries[i,0]
+            if mode == "all":
+                timeSeries[i,1] = self.eta_overall(x0,time,setUp)
+            elif mode != "all":
+                if(setUp):
+                    timeSeries[i,1] = self.eta_setUp(x0,time)
+                if mode =="short":
+                    timeSeries[i,1]+=self.eta_short(x0,time) + self.eta_2ndOrder(x0,time)
+                if mode =="long":
+                    timeSeries[i,1]+=self.eta_long(x0,time) 
+            else:
+                logEvent('WaveTools.py: Argument mode in eta_write for 2nd order correction should be "all", "long" or "short"  ')
+                sys.exit(1)
+        
+        delimiter =" "
+        if filename[-4:]==".csv":
+            delimiter = ","
+        
+        np.savetxt(filename,timeSeries,delimiter=delimiter)
+
 
 
 
