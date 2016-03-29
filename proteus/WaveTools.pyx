@@ -1128,7 +1128,7 @@ class NonlinearCorrectionWriteSeries(RandomWaves):
         for i in range(0,self.N-1):
             for j in range(i+1,self.N):
                 Dp = (self.omega[i]+self.omega[j])**2 - self.g*(self.ki[i]+self.ki[j])*tanh((self.ki[i]+self.ki[j])*self.depth)
-                Bp = (self.omega[i]**2+self.omega[j]**2)/(2*self.g) - ((self.omega[i]*self.omega[j])/(2*self.g))*(1-(cos(self.kDir[i]-self.kDir[j])/(tanh(self.ki[i]*self.depth)*tanh(self.ki[j]*self.depth))))*(((self.omega[i]+self.omega[j])**2 + self.g*(self.ki[i]+self.ki[j])*tanh((self.ki[i]+self.ki[j])*self.depth))/Dp) + ((self.omega[i]+self.omega[j])/(2*self.g*Dp))*((self.omega[i]**3/sinh(self.ki[i]*self.depth)**2) + (self.omega[j]**3/sinh(self.ki[j]*self.depth)**2))	
+                Bp = (self.omega[i]**2+self.omega[j]**2)/(2*self.g) - ((self.omega[i]*self.omega[j])/(2*self.g))*(1-1./(tanh(self.ki[i]*self.depth)*tanh(self.ki[j]*self.depth))))*(((self.omega[i]+self.omega[j])**2 + self.g*(self.ki[i]+self.ki[j])*tanh((self.ki[i]+self.ki[j])*self.depth))/Dp) + ((self.omega[i]+self.omega[j])/(2*self.g*Dp))*((self.omega[i]**3/sinh(self.ki[i]*self.depth)**2) + (self.omega[j]**3/sinh(self.ki[j]*self.depth)**2))	
                 ai_short = self.ai[i]*self.ai[j]*Bp
                 wwi_short = eta_mode(x,t,self.kDir[i]+self.kDir[j],self.omega[i]+self.omega[j],self.phi[i]+self.phi[j],ai_short)
                 Etashort += wwi_short
@@ -1142,7 +1142,7 @@ class NonlinearCorrectionWriteSeries(RandomWaves):
         for i in range(0,self.N-1):
             for j in range(i+1,self.N):
                 Dm = (self.omega[i]-self.omega[j])**2 - self.g*(self.ki[i]-self.ki[j])*tanh((self.ki[i]-self.ki[j])*self.depth)	
-                Bm = (self.omega[i]**2+self.omega[j]**2)/(2*self.g) + ((self.omega[i]*self.omega[j])/(2*self.g))*(1+(cos(self.kDir[i]-self.kDir[j])/(tanh(self.ki[i]*self.depth)*tanh(self.ki[j]*self.depth))))*(((self.omega[i]-self.omega[j])**2 + self.g*(self.ki[i]-self.ki[j])*tanh((self.ki[i]-self.ki[j])*self.depth))/Dm) + ((self.omega[i]-self.omega[j])/(2*self.g*Dm))*((self.omega[i]**3/sinh(self.ki[i]*self.depth)**2) - (self.omega[j]**3/sinh(self.ki[j]*self.depth)**2))
+                Bm = (self.omega[i]**2+self.omega[j]**2)/(2*self.g) + ((self.omega[i]*self.omega[j])/(2*self.g))*(1+1./(tanh(self.ki[i]*self.depth)*tanh(self.ki[j]*self.depth))))*(((self.omega[i]-self.omega[j])**2 + self.g*(self.ki[i]-self.ki[j])*tanh((self.ki[i]-self.ki[j])*self.depth))/Dm) + ((self.omega[i]-self.omega[j])/(2*self.g*Dm))*((self.omega[i]**3/sinh(self.ki[i]*self.depth)**2) - (self.omega[j]**3/sinh(self.ki[j]*self.depth)**2))
                 ai_long = self.ai[i]*self.ai[j]*Bm 
                 wwi_long = eta_mode(x,t,self.kDir[i]-self.kDir[j],self.omega[i]-self.omega[j],self.phi[i]-self.phi[j],ai_long)
                 Etalong += wwi_long
