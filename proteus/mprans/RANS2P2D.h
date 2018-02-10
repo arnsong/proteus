@@ -3006,6 +3006,7 @@ namespace proteus
                 globalResidual[offset_v+stride_v*vel_l2g[eN_i]]+=elementResidual_v[i];
               }//i
           }//ebNE
+
         /* std::cout<<"mesh volume conservation = "<<mesh_volume_conservation<<std::endl; */
         /* std::cout<<"mesh volume conservation weak = "<<mesh_volume_conservation_weak<<std::endl; */
         /* std::cout<<"mesh volume conservation err max= "<<mesh_volume_conservation_err_max<<std::endl; */
