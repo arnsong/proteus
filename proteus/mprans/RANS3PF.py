@@ -940,7 +940,6 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
     def preStep(self, t, firstStep=False):
 
         # Make sure that all the relevant arrays are the correct size
-        # DEM particles
         if (self.nParticles!=self.particles.size()):
             self.nParticles = particles.size()
             self.particle_netForces = np.zeros((self.nParticles, 3), 'd')
@@ -1042,6 +1041,10 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                 self.particle_forceHistory.flush()
                 self.particle_momentHistory.write("%21.15e %21.16e %21.16e\n" % tuple(self.particle_netMoments[0, :]))
                 self.particle_momentHistory.flush()
+            self.particles.calculate(self.particle_netForces,
+                                     self.particle_netMoments,
+                                     self.model.dt_last,
+                                     self.model.timeIntegration.dt)
 
 class LevelModel(proteus.Transport.OneLevelTransport):
     nCalls = 0
