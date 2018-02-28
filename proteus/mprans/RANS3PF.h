@@ -1477,99 +1477,109 @@ namespace proteus
                                       double* particle_netMoments,
                                       double* particle_surfaceArea)
       {
-        double C,rho, mu,nu,H_mu,uc,duc_du,duc_dv,duc_dw,H_s,D_s,phi_s,u_s,v_s,w_s,force_x,force_y,force_z,r_x,r_y,r_z;
+        double C,rho,mu,nu,H_mu,uc,duc_du,duc_dv,duc_dw,H_s,D_s,phi_s,u_s,v_s,w_s,force_x,force_y,force_z,r_x,r_y,r_z;
         double* phi_s_normal;
-	double* vel;
+	      double* vel;
+
         H_mu = (1.0-useVF)*smoothedHeaviside(eps_mu,phi)+useVF*fmin(1.0,fmax(0.0,vf));
         nu  = nu_0*(1.0-H_mu)+nu_1*H_mu;
         rho  = rho_0*(1.0-H_mu)+rho_1*H_mu;
         mu  = rho_0*nu_0*(1.0-H_mu)+rho_1*nu_1*H_mu;
         C=0.0;
+
         for (int i=0;i<nParticles;i++)
+        {
+          phi_s = particle_signed_distances[i*sd_offset];
+          phi_s_normal = &particle_signed_distance_normals[i*sd_offset*nSpace];
+
+          vel = &particle_velocities[i * sd_offset * nSpace];
+
+          u_s = vel[0];
+          v_s = vel[1];
+          w_s = vel[2];
+
+          H_s = smoothedHeaviside(eps_s, phi_s);
+          D_s = smoothedDirac(eps_s, phi_s);
+          double rel_vel_norm=sqrt((uStar - u_s)*(uStar - u_s)+
+                                   (vStar - v_s)*(vStar - v_s)+
+                                   (wStar - w_s)*(wStar - w_s));
+          double C_surf = (phi_s > 0.0) ? 0.0 : nu*penalty;
+          double C_vol = (phi_s > 0.0) ? 0.0 : (alpha + beta*rel_vel_norm);
+
+          C = (D_s*C_surf + (1.0 - H_s) * C_vol);
+          force_x = dV*D_s*(p*phi_s_normal[0] - porosity*mu*(phi_s_normal[0]*grad_u[0] +
+							     phi_s_normal[1]*grad_u[1] +
+							     phi_s_normal[2]*grad_u[2]) +
+			    C_surf*rel_vel_norm*(u-u_s)*rho) + dV*(1.0 - H_s)*C_vol*(u-u_s)*rho;
+
+          force_y = dV*D_s*(p*phi_s_normal[1] - porosity*mu*(phi_s_normal[0]*grad_v[0] +
+							     phi_s_normal[1]*grad_v[1] +
+							     phi_s_normal[2]*grad_v[2]) +
+			    C_surf*rel_vel_norm*(v-v_s)*rho) + dV*(1.0 - H_s)*C_vol*(v-v_s)*rho;
+
+          force_z = dV*D_s*(p*phi_s_normal[2] - porosity*mu*(phi_s_normal[0]*grad_w[0] +
+							     phi_s_normal[1]*grad_w[1] +
+							     phi_s_normal[2]*grad_w[2]) +
+			    C_surf*rel_vel_norm*(v-v_s)*rho) + dV*(1.0 - H_s)*C_vol*(v-v_s)*rho;
+
+          //always 3D for particle centroids
+          r_x = x - particle_centroids[i * 3 + 0];
+          r_y = y - particle_centroids[i * 3 + 1];
+          r_z = z - particle_centroids[i * 3 + 2];
+
+	  if (element_owned)
           {
-            phi_s = particle_signed_distances[i*sd_offset];
-            phi_s_normal = &particle_signed_distance_normals[i*sd_offset*nSpace];
-	    vel = &particle_velocities[i * sd_offset * nSpace];
-            u_s = vel[0];
-            v_s = vel[1];
-            w_s = vel[2];
-            H_s = smoothedHeaviside(eps_s, phi_s);
-            D_s = smoothedDirac(eps_s, phi_s);
-            double rel_vel_norm=sqrt((uStar - u_s)*(uStar - u_s)+
-                                     (vStar - v_s)*(vStar - v_s)+
-                                     (wStar - w_s)*(wStar - w_s));
-            double C_surf = (phi_s > 0.0) ? 0.0 : nu*penalty;
-            double C_vol = (phi_s > 0.0) ? 0.0 : (alpha + beta*rel_vel_norm);
-            C = (D_s*C_surf + (1.0 - H_s) * C_vol);
-	    force_x = dV*D_s*(p*phi_s_normal[0] - porosity*mu*(phi_s_normal[0]*grad_u[0] +
-							       phi_s_normal[1]*grad_u[1] +
-							       phi_s_normal[2]*grad_u[2]) +
-			      C_surf*rel_vel_norm*(u-u_s)*rho) + dV*(1.0 - H_s)*C_vol*(u-u_s)*rho;
-            force_y = dV*D_s*(p*phi_s_normal[1] - porosity*mu*(phi_s_normal[0]*grad_v[0] +
-							       phi_s_normal[1]*grad_v[1] +
-							       phi_s_normal[2]*grad_v[2]) +
-			      C_surf*rel_vel_norm*(v-v_s)*rho) + dV*(1.0 - H_s)*C_vol*(v-v_s)*rho;
-            force_z = dV*D_s*(p*phi_s_normal[2] - porosity*mu*(phi_s_normal[0]*grad_w[0] +
-							       phi_s_normal[1]*grad_w[1] +
-							       phi_s_normal[2]*grad_w[2]) +
-			      C_surf*rel_vel_norm*(v-v_s)*rho) + dV*(1.0 - H_s)*C_vol*(v-v_s)*rho;
-            //always 3D for particle centroids
-            r_x = x - particle_centroids[i * 3 + 0];
-            r_y = y - particle_centroids[i * 3 + 1];
-            r_z = z - particle_centroids[i * 3 + 2];
+	    //always 3D for particle forces
+	    particle_netForces[i*3+0] += force_x;
+            particle_netForces[i*3+1] += force_y;
+            particle_netForces[i*3+2] += force_z;
 
-	    if (element_owned)
-              {
-		//always 3D for particle forces
-		particle_netForces[i*3+0] += force_x;
-		particle_netForces[i*3+1] += force_y;
-		particle_netForces[i*3+2] += force_z;
-		particle_netMoments[i*3+0] += (r_y*force_z - r_z*force_y);
-		particle_netMoments[i*3+1] += (r_z*force_x - r_x*force_z);
-		particle_netMoments[i*3+2] += (r_x*force_y - r_y*force_x);
-	      }
-	    
-            // These should be done inside to make sure the correct velocity of different particles are used
-	    mom_u_source += C*(u - u_s);
-	    mom_v_source += C*(v - v_s);
-	    mom_w_source += C*(w - w_s);
-	
-	    dmom_u_source[0] += C;
-	    dmom_v_source[1] += C;
-	    dmom_w_source[2] += C;
+            particle_netMoments[i*3+0] += (r_y*force_z - r_z*force_y);
+            particle_netMoments[i*3+1] += (r_z*force_x - r_x*force_z);
+            particle_netMoments[i*3+2] += (r_x*force_y - r_y*force_x);
+          }
 
-	    //Nitsche terms
-	    mom_u_ham    -= D_s*porosity*nu*(phi_s_normal[0]*grad_u[0] + phi_s_normal[1]*grad_u[1] + phi_s_normal[2]*grad_u[2]);
-	    dmom_u_ham_grad_u[0] -= D_s*porosity*nu*phi_s_normal[0];
-	    dmom_u_ham_grad_u[1] -= D_s*porosity*nu*phi_s_normal[1];
-	    dmom_u_ham_grad_u[2] -= D_s*porosity*nu*phi_s_normal[2];
-	    
-	    mom_v_ham    -= D_s*porosity*nu*(phi_s_normal[0]*grad_v[0] + phi_s_normal[1]*grad_v[1]+ phi_s_normal[2]*grad_v[2]);
-	    dmom_v_ham_grad_v[0] -= D_s*porosity*nu*phi_s_normal[0];
-	    dmom_v_ham_grad_v[1] -= D_s*porosity*nu*phi_s_normal[1];
-	    dmom_v_ham_grad_v[2] -= D_s*porosity*nu*phi_s_normal[2];
-	    
-	    mom_u_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(u - u_s);
-	    mom_u_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(u - u_s);
-	    mom_u_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(u - u_s);
-	    dmom_u_adv_u[0] += D_s*porosity*nu*phi_s_normal[0];
-	    dmom_u_adv_u[1] += D_s*porosity*nu*phi_s_normal[1];
-	    dmom_u_adv_u[2] += D_s*porosity*nu*phi_s_normal[2];
-	    
-	    mom_v_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(v - v_s);
-	    mom_v_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(v - v_s);
-	    mom_v_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(v - v_s);
-	    dmom_v_adv_v[0] += D_s*porosity*nu*phi_s_normal[0];
-	    dmom_v_adv_v[1] += D_s*porosity*nu*phi_s_normal[1];
-	    dmom_v_adv_v[2] += D_s*porosity*nu*phi_s_normal[2];
-	    
-	    mom_w_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(w - w_s);
-	    mom_w_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(w - w_s);
-	    mom_w_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(w - w_s);
-	    dmom_w_adv_w[0] += D_s*porosity*nu*phi_s_normal[0];
-	    dmom_w_adv_w[1] += D_s*porosity*nu*phi_s_normal[1];
-	    dmom_w_adv_w[2] += D_s*porosity*nu*phi_s_normal[2];
-	  }
+          // These should be done inside to make sure the correct velocity of different particles are used
+	  mom_u_source += C*(u - u_s);
+	  mom_v_source += C*(v - v_s);
+	  mom_w_source += C*(w - w_s);
+	  
+	  dmom_u_source[0] += C;
+	  dmom_v_source[1] += C;
+	  dmom_w_source[2] += C;
+	  
+	  //Nitsche terms
+	  mom_u_ham    -= D_s*porosity*nu*(phi_s_normal[0]*grad_u[0] + phi_s_normal[1]*grad_u[1] + phi_s_normal[2]*grad_u[2]);
+	  dmom_u_ham_grad_u[0] -= D_s*porosity*nu*phi_s_normal[0];
+	  dmom_u_ham_grad_u[1] -= D_s*porosity*nu*phi_s_normal[1];
+	  dmom_u_ham_grad_u[2] -= D_s*porosity*nu*phi_s_normal[2];
+	  
+	  mom_v_ham    -= D_s*porosity*nu*(phi_s_normal[0]*grad_v[0] + phi_s_normal[1]*grad_v[1]+ phi_s_normal[2]*grad_v[2]);
+	  dmom_v_ham_grad_v[0] -= D_s*porosity*nu*phi_s_normal[0];
+	  dmom_v_ham_grad_v[1] -= D_s*porosity*nu*phi_s_normal[1];
+	  dmom_v_ham_grad_v[2] -= D_s*porosity*nu*phi_s_normal[2];
+	  
+	  mom_u_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(u - u_s);
+	  mom_u_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(u - u_s);
+	  mom_u_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(u - u_s);
+	  dmom_u_adv_u[0] += D_s*porosity*nu*phi_s_normal[0];
+	  dmom_u_adv_u[1] += D_s*porosity*nu*phi_s_normal[1];
+	  dmom_u_adv_u[2] += D_s*porosity*nu*phi_s_normal[2];
+	  
+	  mom_v_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(v - v_s);
+	  mom_v_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(v - v_s);
+	  mom_v_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(v - v_s);
+	  dmom_v_adv_v[0] += D_s*porosity*nu*phi_s_normal[0];
+	  dmom_v_adv_v[1] += D_s*porosity*nu*phi_s_normal[1];
+	  dmom_v_adv_v[2] += D_s*porosity*nu*phi_s_normal[2];
+	  
+	  mom_w_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(w - w_s);
+	  mom_w_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(w - w_s);
+	  mom_w_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(w - w_s);
+	  dmom_w_adv_w[0] += D_s*porosity*nu*phi_s_normal[0];
+	  dmom_w_adv_w[1] += D_s*porosity*nu*phi_s_normal[1];
+	  dmom_w_adv_w[2] += D_s*porosity*nu*phi_s_normal[2];
+        }
       }
 
       inline
@@ -1591,7 +1601,7 @@ namespace proteus
           cfl = nrm_df/h;
         //cfl = nrm_df/(h*density);//this is really cfl/dt, but that's what we want to know, the step controller expect this
       }
-      
+
       inline
         void updateTurbulenceClosure(const int turbulenceClosureModel,
                                      const double eps_rho,
