@@ -148,26 +148,12 @@ namespace proteus
 
     inline
       void exteriorNumericalAdvectiveFlux(const int& isFluxBoundary,
-<<<<<<< HEAD
-					  const double& bc_flux,
-					  const double n[nSpace],
-=======
                                           const double& bc_flux,
                                           const double n[nSpace],
->>>>>>> 37b4782e531b39e7bead6cd9a46ae9b3ad387412
                                           const double f[nSpace],
                                           double& flux)
     {
       if (isFluxBoundary == 1)
-<<<<<<< HEAD
-	flux = bc_flux;
-      else
-	{
-	  flux = 0.0;
-	  for (int I=0; I < nSpace; I++)
-	    flux += n[I]*f[I];
-	}
-=======
         flux = bc_flux;
       else
         {
@@ -175,7 +161,6 @@ namespace proteus
           for (int I=0; I < nSpace; I++)
             flux += n[I]*f[I];
         }
->>>>>>> 37b4782e531b39e7bead6cd9a46ae9b3ad387412
     }
 
     inline
@@ -354,11 +339,7 @@ namespace proteus
               register int  i_nSpace=i*nSpace;
               elementResidual_u[i] +=
                 (INTEGRATE_BY_PARTS_DIV_U == 1 ? ck.Advection_weak(f,&u_grad_test_dV[i_nSpace]) : q_divU[eN_k]*u_test_dV[i])
-<<<<<<< HEAD
-		//                + compatibility_condition*u_test_dV[i] // mql: to make the system solvable if int(div(u))!=0
-=======
                 //                + compatibility_condition*u_test_dV[i] // mql: to make the system solvable if int(div(u))!=0
->>>>>>> 37b4782e531b39e7bead6cd9a46ae9b3ad387412
                 + ck.NumericalDiffusion(a,grad_u,&u_grad_test_dV[i_nSpace]);
             }//i
           //
@@ -644,13 +625,8 @@ namespace proteus
               //calculate the numerical fluxes
               //
               exteriorNumericalAdvectiveFlux(isFluxBoundary[ebNE_kb],
-<<<<<<< HEAD
-					     bc_adv_flux[ebNE_kb],
-					     normal,
-=======
                                              bc_adv_flux[ebNE_kb],
                                              normal,
->>>>>>> 37b4782e531b39e7bead6cd9a46ae9b3ad387412
                                              f_ext,
                                              adv_flux_ext); //=f.normal = [(1-vos)*vf + vos*vs].normal
               exteriorNumericalDiffusiveFlux(isDOFBoundary[ebNE_kb],

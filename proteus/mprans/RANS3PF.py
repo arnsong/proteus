@@ -465,8 +465,9 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             for i in range(self.nParticles):
                 for eN in range(self.model.q['x'].shape[0]):
                     for k in range(self.model.q['x'].shape[1]):
-                        self.particle_signed_distances[i, eN, k], self.particle_signed_distance_normals[i, eN, k] = sdf(0, self.model.q['x'][eN, k])
-                        self.particle_velocities[i, eN, k] = vel(0, self.model.q['x'][eN, k])
+                        self.particle_signed_distances[i, eN, k], self.particle_signed_distance_normals[i, eN, k] \
+                            = self.particles[i].sdf(0, self.model.q['x'][eN, k])
+                        self.particle_velocities[i, eN, k] = self.particles.vel(0, self.model.q['x'][eN, k])
                 self.model.q[('phis', i)] = self.particle_signed_distances[i]
                 self.model.q[('phis_vel', i)] = self.particle_velocities[i]
                 for ebN in range(self.model.ebq_global['x'].shape[0]):
@@ -1042,8 +1043,9 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                         self.phi_s[j] = mysdf
                 for eN in range(self.model.q['x'].shape[0]):
                     for k in range(self.model.q['x'].shape[1]):
-                        self.particle_signed_distances[i, eN, k], self.particle_signed_distance_normals[i, eN, k] = sdf(t, self.model.q['x'][eN, k])
-                        self.particle_velocities[i, eN, k] = vel(t, self.model.q['x'][eN, k])
+                        (self.particle_signed_distances[i, eN, k], self.particle_signed_distance_normals[i, eN, k]) \
+                            = self.particles[i].sdf(t, self.model.q['x'][eN, k])
+                        self.particle_velocities[i, eN, k] = self.particles[i].vel(t, self.model.q['x'][eN, k])
                 for ebN in range(self.model.ebq_global['x'].shape[0]):
                     for kb in range(self.model.ebq_global['x'].shape[1]):
                         sdf_ebN_kb,sdNormals = sdf(t, self.model.ebq_global['x'][ebN,kb])

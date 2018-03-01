@@ -29,8 +29,8 @@
 const  double DM=0.0;//1-mesh conservation and divergence, 0 - weak div(v) only
 const  double DM2=0.0;//1-point-wise mesh volume strong-residual, 0 - div(v) only
 const  double DM3=1.0;//1-point-wise divergence, 0-point-wise rate of volume change
-namespace proteus
-{
+//namespace proteus
+//{
   class cppRANS3PF_base
   {
   public:
@@ -3120,12 +3120,9 @@ namespace proteus
                 for(int i=0;i<nDOF_test_element;i++)
                   {
                     register int i_nSpace=i*nSpace;
-<<<<<<< HEAD
-=======
 		    calculateTangentialGradient(unit_normal,
 						&vel_grad_trial[i_nSpace],
 						vel_tgrad_test_i);		    
->>>>>>> 37b4782e531b39e7bead6cd9a46ae9b3ad387412
                     phisErrorElement[i]+=std::abs(phisError[eN_k_nSpace+0])*p_test_dV[i];
                     /* std::cout<<"elemRes_mesh "<<mesh_vel[0]<<'\t'<<mesh_vel[2]<<'\t'<<p_test_dV[i]<<'\t'<<(q_dV_last[eN_k]/dV)<<'\t'<<dV<<std::endl; */
                     /* elementResidual_mesh[i] += ck.Reaction_weak(1.0,p_test_dV[i]) - */
@@ -10034,7 +10031,7 @@ namespace proteus
               }//kb
           }//ebNE
       }//computeJacobian
-    };//RANS3PF
+      };//RANS3PF
 
   inline cppRANS3PF_base* newRANS3PF(int nSpaceIn,
                                      int nQuadraturePoints_elementIn,
@@ -10083,6 +10080,7 @@ namespace proteus
                           angFriction);
     return rvalue;
   }
-} //proteus
+x  
+ //proteus
 
 #endif
