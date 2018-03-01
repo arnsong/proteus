@@ -463,6 +463,7 @@ namespace proteus
                                    double* particle_centroids,
                                    double particle_nitsche,
                                    int KILL_PRESSURE_TERM,
+				   double dt,
                                    int MATERIAL_PARAMETERS_AS_FUNCTION,
                                    double* density_as_function,
                                    double* dynamic_viscosity_as_function,
@@ -903,6 +904,7 @@ namespace proteus
                                                      double* particle_centroids,
                                                      double particle_nitsche,
                                                      int KILL_PRESSURE_TERM,
+						     double dt,
                                                      int MATERIAL_PARAMETERS_AS_FUNCTION,
                                                      double* density_as_function,
                                                      double* dynamic_viscosity_as_function,
@@ -989,6 +991,24 @@ namespace proteus
                                      angFriction);
       }
 
+      inline double Dot(const double vec1[nSpace],
+			const double vec2[nSpace])
+      {
+	double dot = 0;
+	for (int I=0; I<nSpace; I++)
+	  dot += vec1[I]*vec2[I];
+	return dot;
+      }
+      
+      inline void calculateTangentialGradient(const double normal[nSpace],
+					      const double vel_grad[nSpace],
+					      double vel_tgrad[nSpace])
+      {
+	double normal_dot_vel_grad = Dot(normal,vel_grad);
+	for (int I=0; I<nSpace; I++)
+	  vel_tgrad[I] = vel_grad[I] - normal_dot_vel_grad*normal[I];
+      }
+      
       inline double smoothedHeaviside(double eps, double phi)
       {
         double H;
@@ -1477,9 +1497,9 @@ namespace proteus
                                       double* particle_netMoments,
                                       double* particle_surfaceArea)
       {
-        double C,rho,mu,nu,H_mu,uc,duc_du,duc_dv,duc_dw,H_s,D_s,phi_s,u_s,v_s,w_s,force_x,force_y,force_z,r_x,r_y,r_z;
+        double C,rho, mu,nu,H_mu,uc,duc_du,duc_dv,duc_dw,H_s,D_s,phi_s,u_s,v_s,w_s,force_x,force_y,force_z,r_x,r_y,r_z;
         double* phi_s_normal;
-	      double* vel;
+	double* vel;
 
         H_mu = (1.0-useVF)*smoothedHeaviside(eps_mu,phi)+useVF*fmin(1.0,fmax(0.0,vf));
         nu  = nu_0*(1.0-H_mu)+nu_1*H_mu;
@@ -1529,57 +1549,89 @@ namespace proteus
 
 	  if (element_owned)
           {
-	    //always 3D for particle forces
-	    particle_netForces[i*3+0] += force_x;
-            particle_netForces[i*3+1] += force_y;
-            particle_netForces[i*3+2] += force_z;
+            phi_s = particle_signed_distances[i*sd_offset];
+            phi_s_normal = &particle_signed_distance_normals[i*sd_offset*nSpace];
+	    vel = &particle_velocities[i * sd_offset * nSpace];
+            u_s = vel[0];
+            v_s = vel[1];
+            w_s = vel[2];
+            H_s = smoothedHeaviside(eps_s, phi_s);
+            D_s = smoothedDirac(eps_s, phi_s);
+            double rel_vel_norm=sqrt((uStar - u_s)*(uStar - u_s)+
+                                     (vStar - v_s)*(vStar - v_s)+
+                                     (wStar - w_s)*(wStar - w_s));
+            double C_surf = (phi_s > 0.0) ? 0.0 : nu*penalty;
+            double C_vol = (phi_s > 0.0) ? 0.0 : (alpha + beta*rel_vel_norm);
+            C = (D_s*C_surf + (1.0 - H_s) * C_vol);
+	    force_x = dV*D_s*(p*phi_s_normal[0] - porosity*mu*(phi_s_normal[0]*grad_u[0] +
+							       phi_s_normal[1]*grad_u[1] +
+							       phi_s_normal[2]*grad_u[2]) +
+			      C_surf*rel_vel_norm*(u-u_s)*rho) + dV*(1.0 - H_s)*C_vol*(u-u_s)*rho;
+            force_y = dV*D_s*(p*phi_s_normal[1] - porosity*mu*(phi_s_normal[0]*grad_v[0] +
+							       phi_s_normal[1]*grad_v[1] +
+							       phi_s_normal[2]*grad_v[2]) +
+			      C_surf*rel_vel_norm*(v-v_s)*rho) + dV*(1.0 - H_s)*C_vol*(v-v_s)*rho;
+            force_z = dV*D_s*(p*phi_s_normal[2] - porosity*mu*(phi_s_normal[0]*grad_w[0] +
+							       phi_s_normal[1]*grad_w[1] +
+							       phi_s_normal[2]*grad_w[2]) +
+			      C_surf*rel_vel_norm*(v-v_s)*rho) + dV*(1.0 - H_s)*C_vol*(v-v_s)*rho;
+            //always 3D for particle centroids
+            r_x = x - particle_centroids[i * 3 + 0];
+            r_y = y - particle_centroids[i * 3 + 1];
+            r_z = z - particle_centroids[i * 3 + 2];
 
-            particle_netMoments[i*3+0] += (r_y*force_z - r_z*force_y);
-            particle_netMoments[i*3+1] += (r_z*force_x - r_x*force_z);
-            particle_netMoments[i*3+2] += (r_x*force_y - r_y*force_x);
-          }
+	    if (element_owned)
+              {
+		//always 3D for particle forces
+		particle_netForces[i*3+0] += force_x;
+		particle_netForces[i*3+1] += force_y;
+		particle_netForces[i*3+2] += force_z;
+		particle_netMoments[i*3+0] += (r_y*force_z - r_z*force_y);
+		particle_netMoments[i*3+1] += (r_z*force_x - r_x*force_z);
+		particle_netMoments[i*3+2] += (r_x*force_y - r_y*force_x);
+	      }
+	    
+            // These should be done inside to make sure the correct velocity of different particles are used
+	    mom_u_source += C*(u - u_s);
+	    mom_v_source += C*(v - v_s);
+	    mom_w_source += C*(w - w_s);
+	
+	    dmom_u_source[0] += C;
+	    dmom_v_source[1] += C;
+	    dmom_w_source[2] += C;
 
-          // These should be done inside to make sure the correct velocity of different particles are used
-	  mom_u_source += C*(u - u_s);
-	  mom_v_source += C*(v - v_s);
-	  mom_w_source += C*(w - w_s);
-	  
-	  dmom_u_source[0] += C;
-	  dmom_v_source[1] += C;
-	  dmom_w_source[2] += C;
-	  
-	  //Nitsche terms
-	  mom_u_ham    -= D_s*porosity*nu*(phi_s_normal[0]*grad_u[0] + phi_s_normal[1]*grad_u[1] + phi_s_normal[2]*grad_u[2]);
-	  dmom_u_ham_grad_u[0] -= D_s*porosity*nu*phi_s_normal[0];
-	  dmom_u_ham_grad_u[1] -= D_s*porosity*nu*phi_s_normal[1];
-	  dmom_u_ham_grad_u[2] -= D_s*porosity*nu*phi_s_normal[2];
-	  
-	  mom_v_ham    -= D_s*porosity*nu*(phi_s_normal[0]*grad_v[0] + phi_s_normal[1]*grad_v[1]+ phi_s_normal[2]*grad_v[2]);
-	  dmom_v_ham_grad_v[0] -= D_s*porosity*nu*phi_s_normal[0];
-	  dmom_v_ham_grad_v[1] -= D_s*porosity*nu*phi_s_normal[1];
-	  dmom_v_ham_grad_v[2] -= D_s*porosity*nu*phi_s_normal[2];
-	  
-	  mom_u_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(u - u_s);
-	  mom_u_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(u - u_s);
-	  mom_u_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(u - u_s);
-	  dmom_u_adv_u[0] += D_s*porosity*nu*phi_s_normal[0];
-	  dmom_u_adv_u[1] += D_s*porosity*nu*phi_s_normal[1];
-	  dmom_u_adv_u[2] += D_s*porosity*nu*phi_s_normal[2];
-	  
-	  mom_v_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(v - v_s);
-	  mom_v_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(v - v_s);
-	  mom_v_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(v - v_s);
-	  dmom_v_adv_v[0] += D_s*porosity*nu*phi_s_normal[0];
-	  dmom_v_adv_v[1] += D_s*porosity*nu*phi_s_normal[1];
-	  dmom_v_adv_v[2] += D_s*porosity*nu*phi_s_normal[2];
-	  
-	  mom_w_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(w - w_s);
-	  mom_w_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(w - w_s);
-	  mom_w_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(w - w_s);
-	  dmom_w_adv_w[0] += D_s*porosity*nu*phi_s_normal[0];
-	  dmom_w_adv_w[1] += D_s*porosity*nu*phi_s_normal[1];
-	  dmom_w_adv_w[2] += D_s*porosity*nu*phi_s_normal[2];
-        }
+	    //Nitsche terms
+	    mom_u_ham    -= D_s*porosity*nu*(phi_s_normal[0]*grad_u[0] + phi_s_normal[1]*grad_u[1] + phi_s_normal[2]*grad_u[2]);
+	    dmom_u_ham_grad_u[0] -= D_s*porosity*nu*phi_s_normal[0];
+	    dmom_u_ham_grad_u[1] -= D_s*porosity*nu*phi_s_normal[1];
+	    dmom_u_ham_grad_u[2] -= D_s*porosity*nu*phi_s_normal[2];
+	    
+	    mom_v_ham    -= D_s*porosity*nu*(phi_s_normal[0]*grad_v[0] + phi_s_normal[1]*grad_v[1]+ phi_s_normal[2]*grad_v[2]);
+	    dmom_v_ham_grad_v[0] -= D_s*porosity*nu*phi_s_normal[0];
+	    dmom_v_ham_grad_v[1] -= D_s*porosity*nu*phi_s_normal[1];
+	    dmom_v_ham_grad_v[2] -= D_s*porosity*nu*phi_s_normal[2];
+	    
+	    mom_u_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(u - u_s);
+	    mom_u_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(u - u_s);
+	    mom_u_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(u - u_s);
+	    dmom_u_adv_u[0] += D_s*porosity*nu*phi_s_normal[0];
+	    dmom_u_adv_u[1] += D_s*porosity*nu*phi_s_normal[1];
+	    dmom_u_adv_u[2] += D_s*porosity*nu*phi_s_normal[2];
+	    
+	    mom_v_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(v - v_s);
+	    mom_v_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(v - v_s);
+	    mom_v_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(v - v_s);
+	    dmom_v_adv_v[0] += D_s*porosity*nu*phi_s_normal[0];
+	    dmom_v_adv_v[1] += D_s*porosity*nu*phi_s_normal[1];
+	    dmom_v_adv_v[2] += D_s*porosity*nu*phi_s_normal[2];
+	    
+	    mom_w_adv[0] += D_s*porosity*nu*phi_s_normal[0]*(w - w_s);
+	    mom_w_adv[1] += D_s*porosity*nu*phi_s_normal[1]*(w - w_s);
+	    mom_w_adv[2] += D_s*porosity*nu*phi_s_normal[2]*(w - w_s);
+	    dmom_w_adv_w[0] += D_s*porosity*nu*phi_s_normal[0];
+	    dmom_w_adv_w[1] += D_s*porosity*nu*phi_s_normal[1];
+	    dmom_w_adv_w[2] += D_s*porosity*nu*phi_s_normal[2];
+	  }
       }
 
       inline
@@ -1601,7 +1653,7 @@ namespace proteus
           cfl = nrm_df/h;
         //cfl = nrm_df/(h*density);//this is really cfl/dt, but that's what we want to know, the step controller expect this
       }
-
+      
       inline
         void updateTurbulenceClosure(const int turbulenceClosureModel,
                                      const double eps_rho,
@@ -3027,9 +3079,53 @@ namespace proteus
                 // save divergence of velocity
                 q_divU[eN_k] = q_grad_u[eN_k_nSpace+0] + q_grad_v[eN_k_nSpace+1] + q_grad_w[eN_k_nSpace+2];
 
+		// SURFACE TENSION //
+		double unit_normal[nSpace];
+		double norm_grad_phi = 0.; 
+		for (int I=0;I<nSpace;I++)
+		  norm_grad_phi += normal_phi[eN_k_nSpace+I]*normal_phi[eN_k_nSpace+I];
+		norm_grad_phi = std::sqrt(norm_grad_phi) + 1E-10;
+		for (int I=0;I<nSpace;I++)
+		  unit_normal[I] = normal_phi[eN_k_nSpace+I]/norm_grad_phi;
+		// compute auxiliary vectors for explicit term of 2D surf tension
+		// v1 = [1-nx^2 -nx*ny -nx*ny]^T
+		double v1[nSpace];
+		v1[0]=1.-unit_normal[0]*unit_normal[0];
+		v1[1]=-unit_normal[0]*unit_normal[1];
+		v1[2]=-unit_normal[0]*unit_normal[2];
+		// v2 = [-nx*ny 1-ny^2 -ny*nz]^T
+		double v2[nSpace];
+		v2[0]=-unit_normal[0]*unit_normal[1];
+		v2[1]=1.-unit_normal[1]*unit_normal[1];
+		v2[2]=-unit_normal[1]*unit_normal[2];
+		// v3 = [-nx*nz -ny*nz 1-nz^2]^T
+		double v3[nSpace];
+		v3[0]=-unit_normal[0]*unit_normal[2];
+		v3[1]=-unit_normal[1]*unit_normal[2];
+		v3[2]=1.-unit_normal[2]*unit_normal[2];
+		double delta = smoothedDirac(eps_mu,phi[eN_k]); //use eps_rho instead?
+		register double vel_tgrad_test_i[nSpace],
+		  tgrad_u[nSpace], tgrad_v[nSpace], tgrad_w[nSpace];
+		calculateTangentialGradient(unit_normal,
+					    grad_u,
+					    tgrad_u);
+		calculateTangentialGradient(unit_normal,
+					    grad_v,
+					    tgrad_v);
+		calculateTangentialGradient(unit_normal,
+					    grad_w,
+					    tgrad_w);		
+		// END OF SURFACE TENSION //
+		
                 for(int i=0;i<nDOF_test_element;i++)
                   {
                     register int i_nSpace=i*nSpace;
+<<<<<<< HEAD
+=======
+		    calculateTangentialGradient(unit_normal,
+						&vel_grad_trial[i_nSpace],
+						vel_tgrad_test_i);		    
+>>>>>>> 37b4782e531b39e7bead6cd9a46ae9b3ad387412
                     phisErrorElement[i]+=std::abs(phisError[eN_k_nSpace+0])*p_test_dV[i];
                     /* std::cout<<"elemRes_mesh "<<mesh_vel[0]<<'\t'<<mesh_vel[2]<<'\t'<<p_test_dV[i]<<'\t'<<(q_dV_last[eN_k]/dV)<<'\t'<<dV<<std::endl; */
                     /* elementResidual_mesh[i] += ck.Reaction_weak(1.0,p_test_dV[i]) - */
@@ -3058,7 +3154,10 @@ namespace proteus
                       ck.Hamiltonian_weak(mom_u_ham,vel_test_dV[i]) +
                       //ck.SubgridError(subgridError_p,Lstar_p_u[i]) +
                       ck.SubgridError(subgridError_u,Lstar_u_u[i]) +
-                      ck.NumericalDiffusion(q_numDiff_u_last[eN_k],grad_u,&vel_grad_test_dV[i_nSpace]);
+                      ck.NumericalDiffusion(q_numDiff_u_last[eN_k],grad_u,&vel_grad_test_dV[i_nSpace]) +
+		      //surface tension
+		      ck.NumericalDiffusion(delta*sigma*dV,v1,vel_tgrad_test_i) +  //exp.
+		      ck.NumericalDiffusion(dt*delta*sigma*dV,tgrad_u,vel_tgrad_test_i); //imp.
 
                     elementResidual_v[i] +=
                       ck.Mass_weak(mom_v_acc_t,vel_test_dV[i]) +
@@ -3070,7 +3169,10 @@ namespace proteus
                       ck.Hamiltonian_weak(mom_v_ham,vel_test_dV[i]) +
                       //ck.SubgridError(subgridError_p,Lstar_p_v[i]) +
                       ck.SubgridError(subgridError_v,Lstar_v_v[i]) +
-                      ck.NumericalDiffusion(q_numDiff_v_last[eN_k],grad_v,&vel_grad_test_dV[i_nSpace]);
+                      ck.NumericalDiffusion(q_numDiff_v_last[eN_k],grad_v,&vel_grad_test_dV[i_nSpace]) +
+		      //surface tension
+		      ck.NumericalDiffusion(delta*sigma*dV,v2,vel_tgrad_test_i) +  //exp.
+		      ck.NumericalDiffusion(dt*delta*sigma*dV,tgrad_v,vel_tgrad_test_i); //imp.
 
                     elementResidual_w[i] +=
                       ck.Mass_weak(mom_w_acc_t,vel_test_dV[i]) +
@@ -3082,7 +3184,10 @@ namespace proteus
                       ck.Hamiltonian_weak(mom_w_ham,vel_test_dV[i]) +
                       //ck.SubgridError(subgridError_p,Lstar_p_w[i]) +
                       ck.SubgridError(subgridError_w,Lstar_w_w[i]) +
-                      ck.NumericalDiffusion(q_numDiff_w_last[eN_k],grad_w,&vel_grad_test_dV[i_nSpace]);
+                      ck.NumericalDiffusion(q_numDiff_w_last[eN_k],grad_w,&vel_grad_test_dV[i_nSpace]) +
+		      //surface tension
+		      ck.NumericalDiffusion(delta*sigma*dV,v3,vel_tgrad_test_i) +  //exp.
+		      ck.NumericalDiffusion(dt*delta*sigma*dV,tgrad_w,vel_tgrad_test_i); //imp.
                   }//i
               }
             //
@@ -3631,7 +3736,7 @@ namespace proteus
                 //calculate the numerical fluxes
                 //
                 ck.calculateGScale(G,normal,h_penalty);
-                penalty = useMetrics*C_b*h_penalty + (1.0-useMetrics)*ebqe_penalty_ext[ebNE_kb];
+                penalty = useMetrics*C_b/h_penalty + (1.0-useMetrics)*ebqe_penalty_ext[ebNE_kb];
                 exteriorNumericalAdvectiveFlux(isDOFBoundary_p[ebNE_kb],
                                                isDOFBoundary_u[ebNE_kb],
                                                isDOFBoundary_v[ebNE_kb],
@@ -4182,6 +4287,7 @@ namespace proteus
                              double* particle_centroids,
                              double particle_nitsche,
                              int KILL_PRESSURE_TERM,
+			     double dt,
                              int MATERIAL_PARAMETERS_AS_FUNCTION,
                              double* density_as_function,
                              double* dynamic_viscosity_as_function,
@@ -4853,14 +4959,31 @@ namespace proteus
                 dmom_w_adv_w[1] += dmom_u_acc_u*(useRBLES*subgridError_v);
                 dmom_w_adv_w[2] += dmom_u_acc_u*(useRBLES*subgridError_w);
 
-
+		// SURFACE TENSION //
+		double unit_normal[nSpace];
+		double norm_grad_phi = 0.; 
+		for (int I=0;I<nSpace;I++)
+		  norm_grad_phi += normal_phi[eN_k_nSpace+I]*normal_phi[eN_k_nSpace+I];
+		norm_grad_phi = std::sqrt(norm_grad_phi) + 1E-10;
+		for (int I=0;I<nSpace;I++)
+		  unit_normal[I] = normal_phi[eN_k_nSpace+I]/norm_grad_phi;
+		double delta = smoothedDirac(eps_mu,phi[eN_k]); //use eps_rho instead?
+		register double vel_tgrad_test_i[nSpace], vel_tgrad_test_j[nSpace];
+		// END OF SURFACE TENSION //
+		
                 //cek todo add RBLES terms consistent to residual modifications or ignore the partials w.r.t the additional RBLES terms
                 for(int i=0;i<nDOF_test_element;i++)
                   {
                     register int i_nSpace = i*nSpace;
+		    calculateTangentialGradient(unit_normal,
+						&vel_grad_trial[i_nSpace],
+						vel_tgrad_test_i);		    
                     for(int j=0;j<nDOF_trial_element;j++)
                       {
                         register int j_nSpace = j*nSpace;
+			calculateTangentialGradient(unit_normal,
+						    &vel_grad_trial[j_nSpace],
+						    vel_tgrad_test_j);			
                         /* elementJacobian_p_p[i][j] += ck.SubgridErrorJacobian(dsubgridError_u_p[j],Lstar_u_p[i]) +  */
                         /*   ck.SubgridErrorJacobian(dsubgridError_v_p[j],Lstar_v_p[i]);// +  */
                         /*   /\* ck.SubgridErrorJacobian(dsubgridError_w_p[j],Lstar_w_p[i]);  *\/ */
@@ -4884,7 +5007,12 @@ namespace proteus
                           //
                           //ck.SubgridErrorJacobian(dsubgridError_p_u[j],Lstar_p_u[i]) +
                           ck.SubgridErrorJacobian(dsubgridError_u_u[j],Lstar_u_u[i]) +
-                          ck.NumericalDiffusionJacobian(q_numDiff_u_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]);
+                          ck.NumericalDiffusionJacobian(q_numDiff_u_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) +
+			  // surface tension
+			  ck.NumericalDiffusion(dt*delta*sigma*dV,
+						vel_tgrad_test_i,
+						vel_tgrad_test_j);			  
+			
                         elementJacobian_u_v[i][j] +=
                           ck.AdvectionJacobian_weak(dmom_u_adv_v,vel_trial_ref[k*nDOF_trial_element+j],&vel_grad_test_dV[i_nSpace]) +
                           ck.SimpleDiffusionJacobian_weak(sdInfo_u_v_rowptr,sdInfo_u_v_colind,mom_uv_diff_ten,&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) +
@@ -4920,7 +5048,12 @@ namespace proteus
                           //
                           //ck.SubgridErrorJacobian(dsubgridError_p_v[j],Lstar_p_v[i]) +
                           ck.SubgridErrorJacobian(dsubgridError_v_v[j],Lstar_v_v[i]) +
-                          ck.NumericalDiffusionJacobian(q_numDiff_v_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]);
+                          ck.NumericalDiffusionJacobian(q_numDiff_v_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) +
+			  // surface tension
+			  ck.NumericalDiffusion(dt*delta*sigma*dV,
+						vel_tgrad_test_i,
+						vel_tgrad_test_j);
+			
                         elementJacobian_v_w[i][j] +=
                           ck.AdvectionJacobian_weak(dmom_v_adv_w,vel_trial_ref[k*nDOF_trial_element+j],&vel_grad_test_dV[i_nSpace]) +
                           ck.SimpleDiffusionJacobian_weak(sdInfo_v_w_rowptr,sdInfo_v_w_colind,mom_vw_diff_ten,&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) +
@@ -4955,7 +5088,11 @@ namespace proteus
                           //
                           //ck.SubgridErrorJacobian(dsubgridError_p_w[j],Lstar_p_w[i]) +
                           ck.SubgridErrorJacobian(dsubgridError_w_w[j],Lstar_w_w[i]) +
-                          ck.NumericalDiffusionJacobian(q_numDiff_w_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]);
+                          ck.NumericalDiffusionJacobian(q_numDiff_w_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) +
+			  // surface tension
+			  ck.NumericalDiffusion(dt*delta*sigma*dV,
+						vel_tgrad_test_i,
+						vel_tgrad_test_j);
                       }//j
                   }//i
               }//k
@@ -5577,7 +5714,7 @@ namespace proteus
                 //calculate the flux jacobian
                 //
                 ck.calculateGScale(G,normal,h_penalty);
-                penalty = useMetrics*C_b*h_penalty + (1.0-useMetrics)*ebqe_penalty_ext[ebNE_kb];
+                penalty = useMetrics*C_b/h_penalty + (1.0-useMetrics)*ebqe_penalty_ext[ebNE_kb];
                 for (int j=0;j<nDOF_trial_element;j++)
                   {
                     register int j_nSpace = j*nSpace,ebN_local_kb_j=ebN_local_kb*nDOF_trial_element+j;
@@ -6952,9 +7089,55 @@ namespace proteus
                     q_grad_v[eN_k_nSpace+I] = grad_v[I];
                     q_grad_w[eN_k_nSpace+I] = grad_w[I];
                   }
+
+                // save divergence of velocity
+                q_divU[eN_k] = q_grad_u[eN_k_nSpace+0] + q_grad_v[eN_k_nSpace+1] + q_grad_w[eN_k_nSpace+2];
+
+		// SURFACE TENSION //
+		double unit_normal[nSpace];
+		double norm_grad_phi = 0.; 
+		for (int I=0;I<nSpace;I++)
+		  norm_grad_phi += normal_phi[eN_k_nSpace+I]*normal_phi[eN_k_nSpace+I];
+		norm_grad_phi = std::sqrt(norm_grad_phi) + 1E-10;
+		for (int I=0;I<nSpace;I++)
+		  unit_normal[I] = normal_phi[eN_k_nSpace+I]/norm_grad_phi;
+		// compute auxiliary vectors for explicit term of 2D surf tension
+		// v1 = [1-nx^2 -nx*ny -nx*ny]^T
+		double v1[nSpace];
+		v1[0]=1.-unit_normal[0]*unit_normal[0];
+		v1[1]=-unit_normal[0]*unit_normal[1];
+		v1[2]=-unit_normal[0]*unit_normal[2];
+		// v2 = [-nx*ny 1-ny^2 -ny*nz]^T
+		double v2[nSpace];
+		v2[0]=-unit_normal[0]*unit_normal[1];
+		v2[1]=1.-unit_normal[1]*unit_normal[1];
+		v2[2]=-unit_normal[1]*unit_normal[2];
+		// v3 = [-nx*nz -ny*nz 1-nz^2]^T
+		double v3[nSpace];
+		v3[0]=-unit_normal[0]*unit_normal[2];		
+		v3[1]=-unit_normal[1]*unit_normal[2];
+		v3[2]=1.-unit_normal[2]*unit_normal[2];
+		double delta = smoothedDirac(eps_mu,phi[eN_k]); //use eps_rho instead?
+		register double vel_tgrad_test_i[nSpace],
+		  tgrad_u[nSpace], tgrad_v[nSpace], tgrad_w[nSpace];
+		calculateTangentialGradient(unit_normal,
+					    grad_u,
+					    tgrad_u);
+		calculateTangentialGradient(unit_normal,
+					    grad_v,
+					    tgrad_v);
+		calculateTangentialGradient(unit_normal,
+					    grad_w,
+					    tgrad_w);		
+		// END OF SURFACE TENSION //
+		
                 for(int i=0;i<nDOF_test_element;i++)
                   {
                     register int i_nSpace=i*nSpace;
+		    calculateTangentialGradient(unit_normal,
+						&vel_grad_trial[i_nSpace],
+						vel_tgrad_test_i);
+		    
                     /* std::cout<<"elemRes_mesh "<<mesh_vel[0]<<'\t'<<mesh_vel[2]<<'\t'<<p_test_dV[i]<<'\t'<<(q_dV_last[eN_k]/dV)<<'\t'<<dV<<std::endl; */
                     /* elementResidual_mesh[i] += ck.Reaction_weak(1.0,p_test_dV[i]) - */
                     /*   ck.Reaction_weak(1.0,p_test_dV[i]*q_dV_last[eN_k]/dV) - */
@@ -6982,8 +7165,11 @@ namespace proteus
                       ck.Hamiltonian_weak(mom_u_ham,vel_test_dV[i]) + // Press + Non-linearity
                       //ck.SubgridError(subgridError_p,Lstar_p_u[i]) +
                       //ck.SubgridError(subgridError_u,Lstar_u_u[i]) +
-                      ck.NumericalDiffusion(q_numDiff_u_last[eN_k],grad_u,&vel_grad_test_dV[i_nSpace]); // Numerical diffusion
-
+                      ck.NumericalDiffusion(q_numDiff_u_last[eN_k],grad_u,&vel_grad_test_dV[i_nSpace]) + // Numerical diffusion
+		      //surface tension
+		      ck.NumericalDiffusion(delta*sigma*dV,v1,vel_tgrad_test_i) +  //exp.
+		      ck.NumericalDiffusion(dt*delta*sigma*dV,tgrad_u,vel_tgrad_test_i); //imp.
+		      
                     elementResidual_v[i] +=
                       ck.Mass_weak(mom_v_acc_t,vel_test_dV[i]) + // time derivative
                       ck.Advection_weak(mom_v_adv,&vel_grad_test_dV[i_nSpace]) + // Just due to moving mesh
@@ -6994,8 +7180,11 @@ namespace proteus
                       ck.Hamiltonian_weak(mom_v_ham,vel_test_dV[i]) + // Press + Non-linearity
                       //ck.SubgridError(subgridError_p,Lstar_p_v[i]) +
                       //ck.SubgridError(subgridError_v,Lstar_v_v[i]) +
-                      ck.NumericalDiffusion(q_numDiff_v_last[eN_k],grad_v,&vel_grad_test_dV[i_nSpace]); // Numerical diffusion
-
+                      ck.NumericalDiffusion(q_numDiff_v_last[eN_k],grad_v,&vel_grad_test_dV[i_nSpace]) + // Numerical diffusion
+		      //surface tension
+		      ck.NumericalDiffusion(delta*sigma*dV,v2,vel_tgrad_test_i) +  //exp.
+		      ck.NumericalDiffusion(dt*delta*sigma*dV,tgrad_v,vel_tgrad_test_i); //imp.
+		      
                     elementResidual_w[i] +=
                       ck.Mass_weak(mom_w_acc_t,vel_test_dV[i]) + // time derivative
                       ck.Advection_weak(mom_w_adv,&vel_grad_test_dV[i_nSpace]) + // Just due to moving mesh
@@ -7006,8 +7195,11 @@ namespace proteus
                       ck.Hamiltonian_weak(mom_w_ham,vel_test_dV[i]) + // Press + Non-linearity
                       //ck.SubgridError(subgridError_p,Lstar_p_w[i]) +
                       //ck.SubgridError(subgridError_w,Lstar_w_w[i]) +
-                      ck.NumericalDiffusion(q_numDiff_w_last[eN_k],grad_w,&vel_grad_test_dV[i_nSpace]); // Numerical diffusion
-
+                      ck.NumericalDiffusion(q_numDiff_w_last[eN_k],grad_w,&vel_grad_test_dV[i_nSpace]) + // Numerical diffusion
+		      //surface tension
+		      ck.NumericalDiffusion(delta*sigma*dV,v3,vel_tgrad_test_i) +  //exp.
+		      ck.NumericalDiffusion(dt*delta*sigma*dV,tgrad_w,vel_tgrad_test_i); //imp.
+		      
                     //////////////////////////////////////////
                     // ***** COMPUTE ENTROPY RESIDUAL ***** //
                     //////////////////////////////////////////
@@ -7600,7 +7792,7 @@ namespace proteus
                 //calculate the numerical fluxes
                 //
                 ck.calculateGScale(G,normal,h_penalty);
-                penalty = useMetrics*C_b*h_penalty + (1.0-useMetrics)*ebqe_penalty_ext[ebNE_kb];
+                penalty = useMetrics*C_b/h_penalty + (1.0-useMetrics)*ebqe_penalty_ext[ebNE_kb];
                 exteriorNumericalAdvectiveFlux(isDOFBoundary_p[ebNE_kb],
                                                isDOFBoundary_u[ebNE_kb],
                                                isDOFBoundary_v[ebNE_kb],
@@ -7958,9 +8150,7 @@ namespace proteus
                                                                  sdInfo_w_w_colind,
                                                                  mom_ww_diff_ten_ext,
                                                                  &vel_grad_test_dS[i*nSpace]);
-                    //////////////////////////////////////////////////////
                     // ***** ADD CONTRIBUTION ON ENTROPY RESIDUAL ***** //
-                    //////////////////////////////////////////////////////
                     elementEntropyResidual[i] += (diffusive_flux_dot_solution +
                                                   diffusive_symmetric_flux_dot_solution)*vel_test_dS[i];
                   }//i
@@ -7987,9 +8177,7 @@ namespace proteus
         /* std::cout<<"mesh volume conservation weak = "<<mesh_volume_conservation_weak<<std::endl; */
         /* std::cout<<"mesh volume conservation err max= "<<mesh_volume_conservation_err_max<<std::endl; */
         /* std::cout<<"mesh volume conservation err max weak = "<<mesh_volume_conservation_err_max_weak<<std::endl; */
-        ///////////////////////////////////////
         // MAX ENTROPY RESIDUAL AT EACH CELL // max_{i\in K} (R_i)
-        ///////////////////////////////////////
         for(int eN=0;eN<nElements_global;eN++)
           {
             double entropyResidualAtCurrentCell = 0.;
@@ -8186,6 +8374,7 @@ namespace proteus
                                                double* particle_centroids,
                                                double particle_nitsche,
                                                int KILL_PRESSURE_TERM,
+					       double dt,
                                                int MATERIAL_PARAMETERS_AS_FUNCTION,
                                                double* density_as_function,
                                                double* dynamic_viscosity_as_function,
@@ -8851,13 +9040,32 @@ namespace proteus
                 //dmom_w_adv_w[1] += dmom_u_acc_u*(useRBLES*subgridError_v);
                 //dmom_w_adv_w[2] += dmom_u_acc_u*(useRBLES*subgridError_w);
 
+		// SURFACE TENSION //
+		double unit_normal[nSpace];
+		double norm_grad_phi = 0.; 
+		for (int I=0;I<nSpace;I++)
+		  norm_grad_phi += normal_phi[eN_k_nSpace+I]*normal_phi[eN_k_nSpace+I];
+		norm_grad_phi = std::sqrt(norm_grad_phi) + 1E-10;
+		for (int I=0;I<nSpace;I++)
+		  unit_normal[I] = normal_phi[eN_k_nSpace+I]/norm_grad_phi;
+		double delta = smoothedDirac(eps_mu,phi[eN_k]); //use eps_rho instead?
+		register double vel_tgrad_test_i[nSpace], vel_tgrad_test_j[nSpace];
+		// END OF SURFACE TENSION //
+		
                 //cek todo add RBLES terms consistent to residual modifications or ignore the partials w.r.t the additional RBLES terms
                 for(int i=0;i<nDOF_test_element;i++)
                   {
                     register int i_nSpace = i*nSpace;
+		    calculateTangentialGradient(unit_normal,
+						&vel_grad_trial[i_nSpace],
+						vel_tgrad_test_i);		    
                     for(int j=0;j<nDOF_trial_element;j++)
                       {
                         register int j_nSpace = j*nSpace;
+			calculateTangentialGradient(unit_normal,
+						    &vel_grad_trial[j_nSpace],
+						    vel_tgrad_test_j);
+			
                         /* elementJacobian_p_p[i][j] += ck.SubgridErrorJacobian(dsubgridError_u_p[j],Lstar_u_p[i]) +  */
                         /*   ck.SubgridErrorJacobian(dsubgridError_v_p[j],Lstar_v_p[i]);// +  */
                         /*   /\* ck.SubgridErrorJacobian(dsubgridError_w_p[j],Lstar_w_p[i]);  *\/ */
@@ -8881,7 +9089,12 @@ namespace proteus
                           //
                           //ck.SubgridErrorJacobian(dsubgridError_p_u[j],Lstar_p_u[i]) +
                           //ck.SubgridErrorJacobian(dsubgridError_u_u[j],Lstar_u_u[i]) +
-                          ck.NumericalDiffusionJacobian(q_numDiff_u_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]); // Numerical diffusion
+                          ck.NumericalDiffusionJacobian(q_numDiff_u_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) + // Numerical diffusion
+			  // surface tension
+			  ck.NumericalDiffusion(dt*delta*sigma*dV,
+						vel_tgrad_test_i,
+						vel_tgrad_test_j);
+			
                         elementJacobian_u_v[i][j] +=
                           ck.AdvectionJacobian_weak(dmom_u_adv_v,vel_trial_ref[k*nDOF_trial_element+j],&vel_grad_test_dV[i_nSpace]) + // moving mesh
                           ck.SimpleDiffusionJacobian_weak(sdInfo_u_v_rowptr,sdInfo_u_v_colind,mom_uv_diff_ten,&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) +
@@ -8917,7 +9130,12 @@ namespace proteus
                           //
                           //ck.SubgridErrorJacobian(dsubgridError_p_v[j],Lstar_p_v[i]) +
                           //ck.SubgridErrorJacobian(dsubgridError_v_v[j],Lstar_v_v[i]) +
-                          ck.NumericalDiffusionJacobian(q_numDiff_v_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]); // num diffusion
+                          ck.NumericalDiffusionJacobian(q_numDiff_v_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) +  // num diffusion
+			  // surface tension
+			  ck.NumericalDiffusion(dt*delta*sigma*dV,
+						vel_tgrad_test_i,
+						vel_tgrad_test_j);
+			  
                         elementJacobian_v_w[i][j] +=
                           ck.AdvectionJacobian_weak(dmom_v_adv_w,vel_trial_ref[k*nDOF_trial_element+j],&vel_grad_test_dV[i_nSpace]) +  // moving mesh
                           ck.SimpleDiffusionJacobian_weak(sdInfo_v_w_rowptr,sdInfo_v_w_colind,mom_vw_diff_ten,&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) +
@@ -8952,7 +9170,11 @@ namespace proteus
                           //
                           //ck.SubgridErrorJacobian(dsubgridError_p_w[j],Lstar_p_w[i]) +
                           //ck.SubgridErrorJacobian(dsubgridError_w_w[j],Lstar_w_w[i]) +
-                          ck.NumericalDiffusionJacobian(q_numDiff_w_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]); // num diffusion
+                          ck.NumericalDiffusionJacobian(q_numDiff_w_last[eN_k],&vel_grad_trial[j_nSpace],&vel_grad_test_dV[i_nSpace]) + // num diffusion
+			  // surface tension
+			  ck.NumericalDiffusion(dt*delta*sigma*dV,
+						vel_tgrad_test_i,
+						vel_tgrad_test_j);
                       }//j
                   }//i
               }//k
@@ -9574,7 +9796,7 @@ namespace proteus
                 //calculate the flux jacobian
                 //
                 ck.calculateGScale(G,normal,h_penalty);
-                penalty = useMetrics*C_b*h_penalty + (1.0-useMetrics)*ebqe_penalty_ext[ebNE_kb];
+                penalty = useMetrics*C_b/h_penalty + (1.0-useMetrics)*ebqe_penalty_ext[ebNE_kb];
                 for (int j=0;j<nDOF_trial_element;j++)
                   {
                     register int j_nSpace = j*nSpace,ebN_local_kb_j=ebN_local_kb*nDOF_trial_element+j;
