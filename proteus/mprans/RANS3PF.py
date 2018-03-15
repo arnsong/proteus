@@ -433,6 +433,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.phisField = np.ones(self.model.q[('u', 0)].shape, 'd') * 1e10
         self.ebq_global_phi_s = numpy.ones_like(self.model.ebq_global[('totalFlux',0)]) * 1.e10
         self.ebq_global_grad_phi_s = numpy.ones_like(self.model.ebq_global[('velocityAverage',0)]) * 1.e10
+
         # This is making a special case for granular material simulations
         # if the user inputs a list of position/velocities then the sdf are calculated based on the "spherical" particles
         # otherwise the sdf are calculated based on the input sdf list for each body
@@ -461,6 +462,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                             self.ebq_global_grad_phi_s[ebN,kb,:]=sdNormals
         else:
             for i in range(self.nParticles):
+                self.particle_centroids[i,:] = self.particles[i].centroid()
                 for eN in range(self.model.q['x'].shape[0]):
                     for k in range(self.model.q['x'].shape[1]):
                         self.particle_signed_distances[i, eN, k], self.particle_signed_distance_normals[i, eN, k] \
@@ -601,7 +603,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
 
     def initializeMesh(self, mesh):
         self.phi_s = numpy.ones(mesh.nodeArray.shape[0], 'd')*1e10
-
+        self.particle_centroids = np.zeros((self.nParticles, 3), 'd')
+        
         if self.granular_sdf_Calc is not None:
             print ("updating", self.nParticles, " particles...")
             for i in range(self.nParticles):
@@ -609,8 +612,10 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                     sdf, sdNormals = self.granular_sdf_Calc(mesh.nodeArray[j, :], i)
                     if (abs(sdf) < abs(self.phi_s[j])):
                         self.phi_s[j] = sdf
+
         else:
             for i in range(self.nParticles):
+                self.particle_centroids[i,:] = self.particles[i].centroid()
                 for j in range(mesh.nodeArray.shape[0]):
                     #self.phi_s[j], sdNormals = sdf(0, mesh.nodeArray[j, :])
                     sdf_j,sdNormals=self.particles[i].sdf(0,mesh.nodeArray[j,:])
@@ -956,7 +961,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
     def preStep(self, t, firstStep=False):
 
         # DEM particles
-        if (self.nParticles!=self.particles.size()):
+        if (self.nParticles != self.particles.size()):
             self.nParticles = self.particles.size()
             self.particle_netForces = np.zeros((self.nParticles, 3), 'd')
             self.particle_netMoments = np.zeros((self.nParticles, 3), 'd')
@@ -965,7 +970,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             self.particle_signed_distances = np.zeros((self.nParticles,) + self.model.q[('u', 0)].shape, 'd')
             self.particle_signed_distance_normals = np.zeros((self.nParticles,) + self.model.q[('velocity', 0)].shape, 'd')
             self.particle_velocities = np.zeros((self.nParticles,) + self.model.q[('velocity', 0)].shape, 'd')
-        
+
         # Save old solutions
         # solution at tnm1
         self.model.u_dof_old_old[:] = self.model.u_dof_old[:]
@@ -1030,6 +1035,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
 
         else:
             for i in range(self.nParticles):
+                self.particle_centroids[i,:] = self.particles[i].centroid()
                 for j in range(self.mesh.nodeArray.shape[0]):
                     myvel = self.particles[i].vel(t, self.mesh.nodeArray[j, :])
                     mysdf, sdNormals = self.particles[i].sdf(t, self.mesh.nodeArray[j, :])
