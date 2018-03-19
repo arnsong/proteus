@@ -146,8 +146,8 @@ else:
                     [0.2+0.06,0.2+0.06],
                     [0.2+0.06,0.2-0.06]]
 
-                    
-                    
+
+
         vertexFlags = [boundaryTags['bottom'],
                        boundaryTags['bottom'],
                        boundaryTags['top'],
@@ -350,4 +350,3 @@ def particle_sdf(t, x):
 
 def particle_vel(t, x):
     return (0.0,0.0)
-

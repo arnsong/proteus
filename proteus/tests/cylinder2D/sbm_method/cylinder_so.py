@@ -1,7 +1,8 @@
 import proteus.default_so
 reload(proteus.default_so)
 from proteus.default_so import *
-from . import cylinder
+import cylinder
+
 reload(cylinder)
 
 from proteus.SplitOperator import Sequential_FixedStep_Simple, defaultSystem
@@ -46,12 +47,12 @@ else:
 #     cylinder.PINC_model=5
 #     cylinder.PRESSURE_model=6
 #     cylinder.PINIT_model=7
-    
+
     pnList = [("twp_navier_stokes_p", "twp_navier_stokes_n"),#0
           ("pressureincrement_p", "pressureincrement_n"),#1
           ("pressure_p", "pressure_n"),#2
           ("pressureInitial_p", "pressureInitial_n")]#3
- 
+
     cylinder.VOF_model=None
     cylinder.VOS_model=None
     cylinder.SED_model=None
@@ -85,7 +86,7 @@ dt_system_fixed = cylinder.dt_fixed
 systemStepControllerType = Sequential_MinAdaptiveModelStepPS
 
 # systemStepControllerType = Sequential_FixedStep #Sequential_FixedStep_Simple # uses time steps in so.tnList
-# dt_system_fixed = 0.01; 
+# dt_system_fixed = 0.01;
 # systemStepExact=False;
 
 
