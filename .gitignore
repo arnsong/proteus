@@ -1,3 +1,5 @@
+proteus/tests/*
+.coverage.*
 *.idea
 *.so
 *.csv
