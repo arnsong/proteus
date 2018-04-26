@@ -23,10 +23,10 @@
   pAManager SModel_attManager(pModel model);
 #endif
 
-/** 
+/**
  * \file cMeshAdaptPUMI.cpp
- * \ingroup MeshAdaptPUMI 
- @{ 
+ * \ingroup MeshAdaptPUMI
+ @{
 */
 MeshAdaptPUMIDrvr::MeshAdaptPUMIDrvr(double Hmax, double Hmin, int NumIter,
     const char* sfConfig, const char* maType,const char* logType, double targetError, double targetElementCount,int reconstructedFlag)
@@ -69,7 +69,7 @@ MeshAdaptPUMIDrvr::MeshAdaptPUMIDrvr(double Hmax, double Hmin, int NumIter,
   rel_err_total = 0.0;
   exteriorGlobaltoLocalElementBoundariesArray = NULL;
   size_field_config = sfConfig;
-  modelFileName = NULL; 
+  modelFileName = NULL;
   adapt_type_config = maType;
   logging_config = logType;
   has_gBC = false;
@@ -120,7 +120,7 @@ static bool ends_with(std::string const& str, std::string const& ext)
  * The default filetypes are .dmg (model) and .smb (mesh), but can support GMSH meshes (.msh) and Simmetrix models (.smd) and meshes (.sms)
  * GMSH models are not used and .null filenames and passed instead.
  * Each of the the GMSH and Simmetrix filetypes can be converted into a SCOREC filetype via tools in scorec
- * Diffusive flux boundary conditions are supported with Simmetrix models and can be passed into the error estimator 
+ * Diffusive flux boundary conditions are supported with Simmetrix models and can be passed into the error estimator
  */
 
 int MeshAdaptPUMIDrvr::loadModelAndMesh(const char* modelFile, const char* meshFile)
@@ -173,14 +173,14 @@ int MeshAdaptPUMIDrvr::getSimmetrixBC()
   pAttribute Att[GM_numFaces(model)];
   int attMap[GM_numFaces(model)];
   int nF=0;
-  
+
   char strAtt[2][25] = {"traction vector","comp3"};
   int modelEntTag;
 
   while(gFace = GFIter_next(gfIter))
   {
     if(GEN_attrib((pGEntity)gFace,strAtt[0]))
-    { 
+    {
       modelEntTag=GEN_tag((pGEntity)gFace);
       Att[nF]=GEN_attrib((pGEntity)gFace,strAtt[0]);
       attMap[nF] = modelEntTag;
@@ -188,7 +188,7 @@ int MeshAdaptPUMIDrvr::getSimmetrixBC()
     }
   }
   GFIter_delete(gfIter);
-  
+
   apf::MeshIterator* fIter = m->begin(FACE);
   apf::MeshEntity* fEnt;
   apf::Vector3 evalPt;
@@ -198,7 +198,7 @@ int MeshAdaptPUMIDrvr::getSimmetrixBC()
 
   //assign a label to the BC type tag
   char label[9],labelflux[4][9],type_flag;
-  
+
   sprintf(label,"BCtype");
   BCtag = m->createIntTag(label,4);
   for(int idx=0;idx<4;idx++)
@@ -260,7 +260,7 @@ int MeshAdaptPUMIDrvr::getSimmetrixBC()
           int dummy[4] = {0,0,0,0};
           m->setIntTag(fEnt,BCtag,&(dummy[0]));
       }
-    } 
+    }
   }//end while
   m->end(fIter);
   AMAN_release( attmngr );
@@ -270,17 +270,17 @@ int MeshAdaptPUMIDrvr::getSimmetrixBC()
       //exit(1);
   }
 
-  if(comm_rank==0)std::cout<<"Finished reading and storing diffusive flux BCs\n"; 
+  if(comm_rank==0)std::cout<<"Finished reading and storing diffusive flux BCs\n";
 #endif
   return 0;
-} 
+}
 
-int MeshAdaptPUMIDrvr::willAdapt() 
+int MeshAdaptPUMIDrvr::willAdapt()
 /**
  * @brief Looks at the estimated error and determines if mesh adaptation is necessary.
  *
  * Function used to define whether a mesh needs to be adapted based on the error estimator
- * The return value is a flag indicating whether the mesh will not (0) or will be (1) adapted 
+ * The return value is a flag indicating whether the mesh will not (0) or will be (1) adapted
  * The THRESHOLD will be set to the error estimate after the wind-up step, but is currently 0
  * Assertion is set to ensure that all ranks in a parallel execution will enter the adapt stage
  */
@@ -342,7 +342,7 @@ int MeshAdaptPUMIDrvr::adaptPUMIMesh()
       myfile << t2-t1<<std::endl;
       myfile.close();
     }
-  }  
+  }
   else if (size_field_config == "meshQuality"){
     size_iso = samSz::isoSize(m);
   }
@@ -372,7 +372,7 @@ int MeshAdaptPUMIDrvr::adaptPUMIMesh()
     apf::MeshEntity* test;
     std::ofstream myfile;
     myfile.open("meshSizeScale.txt");
-    while(test = m->iterate(it)){ 
+    while(test = m->iterate(it)){
       apf::Vector3 tempScale;
       apf::getVector(size_scale, test, 0,tempScale);
       myfile << tempScale[0] <<","<<tempScale[1]<<","<<tempScale[2]<<std::endl;
@@ -392,9 +392,9 @@ int MeshAdaptPUMIDrvr::adaptPUMIMesh()
 
   if(size_field_config=="ERM"){
       //MeshAdapt error will be thrown if region fields are not freed
-      freeField(err_reg); 
-      freeField(errRho_reg); 
-      freeField(errRel_reg); 
+      freeField(err_reg);
+      freeField(errRho_reg);
+      freeField(errRel_reg);
   }
   // These are relics from an attempt to pass BCs from proteus into the error estimator.
   // They maybe useful in the future.
