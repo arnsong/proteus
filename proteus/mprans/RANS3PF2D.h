@@ -2998,11 +2998,9 @@ namespace proteus
             std::memset(particle_netForces,0,nParticles*3*sizeof(double));
             std::memset(particle_netMoments,0,nParticles*3*sizeof(double));
             for (int ebN_s=0;ebN_s < surrogate_boundaries.size();ebN_s++)
-<<<<<<< HEAD
-                {
-=======
+
               {
->>>>>>> b530096be1c16027ec4ffb483ad5dfe7b72f9e58
+
                 // Initialization of the force to 0
                 register double Fx = 0.0, Fy = 0.0, Mz = 0.0;
                 register int ebN = surrogate_boundaries[ebN_s],
