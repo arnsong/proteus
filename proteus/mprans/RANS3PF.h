@@ -506,8 +506,7 @@ namespace proteus
     {
     public:
       cppHsuSedStress<3> closure;
-      const int nDOF_test_X_trial_element,
-        nSpace2=9;
+      const int nDOF_test_X_trial_element, nSpace2=9;
       CompKernelType ck;
     cppRANS3PF():
       closure(150.0,
