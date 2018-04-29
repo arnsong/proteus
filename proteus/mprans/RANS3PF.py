@@ -1132,8 +1132,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             # Using Mosaic
             if self.particles is not None:
                 for i in range(self.nParticles):
-                    myvel = self.particles[i].vel(t, self.mesh.nodeArray[xyz, :])
-                    mysdf, sdNormals = self.particles[i].sdf(t, self.mesh.nodeArray[xyz, :])
+                    myvel = self.particles[i].vel(t, xyz)
+                    mysdf, sdNormals = self.particles[i].sdf(t, xyz)
                     if distance_to_solid > mysdf:
                         vel_at_xyz = myvel # <- I dont think this is an array
                         distance_to_solid = mysdf
