@@ -226,6 +226,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  ball_radius=None,
                  ball_velocity=None,
                  ball_angular_velocity=None,
+                 use_mosaic=0,
                  ):
         self.MULTIPLY_EXTERNAL_FORCE_BY_DENSITY=MULTIPLY_EXTERNAL_FORCE_BY_DENSITY
         self.CORRECT_VELOCITY = CORRECT_VELOCITY
@@ -352,6 +353,27 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         else:
             self.ball_angular_velocity = ball_angular_velocity
         #
+
+        '''
+        AJS: 06/14/2018
+        Mosaic coupling hack:  We should decide on a common API for coupling 
+        with particle codes
+        '''
+        if use_mosaic:
+            sdfListTemp = []
+            velListTemp = []
+            for i in range(self.nParticles):
+                sdfListTemp.append(particle_sdfList[i].sdf)
+                velListTemp.append(particle_sdfList[i].vel)
+
+            self.particle_sdfList = sdfListTemp
+            self.particle_velocityList = velListTemp
+            
+
+        '''
+        End of Mosaic coupling hack...
+        '''
+                
         mass = {}
         advection = {}
         diffusion = {}
