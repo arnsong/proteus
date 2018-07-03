@@ -464,7 +464,7 @@ int MeshAdaptPUMIDrvr::adaptPUMIMesh()
   
   double t1 = PCU_Time();
   //ma::adapt(in);
-  ma::adaptVerbose(in);
+  //  ma::adaptVerbose(in);
   double t2 = PCU_Time();
 
   m->verify();

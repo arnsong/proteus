@@ -830,7 +830,7 @@ int MeshAdaptPUMIDrvr::getERMSizeField(double err_total)
       h_old = sqrt(apf::measure(element) * 4 / sqrt(3));
     else
       //h_old = pow(apf::measure(element) * 6 * sqrt(2), 1.0 / 3.0); //edge of a regular tet
-      h_old = apf::computeShortestHeightInTet(m,reg);
+      //      h_old = apf::computeShortestHeightInTet(m,reg);
     //err_curr = apf::getScalar(vmsErrH1, reg, 0);
     err_curr = apf::getScalar(errField, reg, 0);
     //err_curr = err_vect[0];

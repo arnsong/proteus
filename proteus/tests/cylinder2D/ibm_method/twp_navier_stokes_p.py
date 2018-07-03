@@ -51,9 +51,7 @@ coefficients = RANS3PF.Coefficients(epsFact=epsFact_viscosity,
                                     particle_alpha=1e6,
                                     particle_beta=1e6,
                                     particle_penalty_constant=1e16,
-                                    particle_sdfList=[particle_sdf],
-                                    particle_velocityList=[particle_vel])
-
+                                    particles = particles)
 
 def getDBC_u(x,flag):
     if flag in[ boundaryTags['left']]: 

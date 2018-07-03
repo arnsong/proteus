@@ -213,11 +213,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  particle_beta=1000.0,
                  particle_penalty_constant=1000.0,
                  particle_nitsche=1.0,
-                 particle_sdfList=[],
                  vos_function=None,
-                 particle_velocityList=[],
-                 granular_sdf_Calc=None,
-                 granular_vel_Calc=None,
                  vos_limiter = 0.05,
                  mu_fr_limiter = 1.00,
                  use_sbm=0,
@@ -226,7 +222,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  ball_radius=None,
                  ball_velocity=None,
                  ball_angular_velocity=None,
-                 use_mosaic=0,
+                 particles=None
                  ):
         self.MULTIPLY_EXTERNAL_FORCE_BY_DENSITY=MULTIPLY_EXTERNAL_FORCE_BY_DENSITY
         self.CORRECT_VELOCITY = CORRECT_VELOCITY
@@ -236,10 +232,6 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.particle_alpha = particle_alpha
         self.particle_beta = particle_beta
         self.particle_penalty_constant = particle_penalty_constant
-        self.particle_sdfList = particle_sdfList
-        self.particle_velocityList = particle_velocityList
-        self.granular_sdf_Calc = granular_sdf_Calc
-        self.granular_vel_Calc = granular_vel_Calc
         self.aDarcy = aDarcy
         self.betaForch = betaForch
         self.grain = grain
@@ -359,16 +351,10 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         Mosaic coupling hack:  We should decide on a common API for coupling 
         with particle codes
         '''
-        if use_mosaic:
-            sdfListTemp = []
-            velListTemp = []
-            for i in range(self.nParticles):
-                sdfListTemp.append(particle_sdfList[i].sdf)
-                velListTemp.append(particle_sdfList[i].vel)
+        self.particles = particles
 
-            self.particle_sdfList = sdfListTemp
-            self.particle_velocityList = velListTemp
-            
+        if self.particles:
+            self.nParticles = self.particles.size()
 
         '''
         End of Mosaic coupling hack...
@@ -476,6 +462,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             self.vectorName = "velocity"
 
     def attachModels(self, modelList):
+
         # level set
         self.model = modelList[self.ME_model]
         self.model.q['phi_solid'] = self.q_phi_solid
@@ -483,6 +470,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.ebqe_rho = self.model.ebqe[('u', 0)].copy()
         self.q_nu = self.model.q[('u', 0)].copy()
         self.ebqe_nu = self.model.ebqe[('u', 0)].copy()
+
         # DEM particles
         self.particle_netForces = np.zeros((self.nParticles, 3), 'd')
         self.particle_netMoments = np.zeros((self.nParticles, 3), 'd')
@@ -502,49 +490,40 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         # otherwise the sdf are calculated based on the input sdf list for each body
         if self.use_ball_as_particle==1:
             pass
-        elif self.granular_sdf_Calc is not None:
-            temp_1 = np.zeros(self.model.q[('u', 0)].shape, 'd')
-            temp_2 = np.zeros(self.model.q[('u', 0)].shape, 'd')
-            temp_3 = np.zeros(self.model.q[('u', 0)].shape, 'd')
-            for i in range(self.nParticles):
-                logEvent("Attaching particle i={0}".format(i))
-                for eN in range(self.model.q['x'].shape[0]):
-                    for k in range(self.model.q['x'].shape[1]):
-                        self.particle_signed_distances[i, eN, k], self.particle_signed_distance_normals[i,
-                                                                                                        eN, k] = self.granular_sdf_Calc(self.model.q['x'][eN, k], i)
-                        self.particle_velocities[i, eN, k] = self.granular_vel_Calc(self.model.q['x'][eN, k], i)
-                # This is important to write the a field for the sdf in the domain which distinguishes solid particles
-                temp_1 = np.minimum(abs(self.particle_signed_distances[i]), abs(self.phisField))
-                temp_2 = np.minimum(self.particle_signed_distances[i], temp_1)
-                temp_3 = np.minimum(temp_2, self.phisField)
-                self.phisField = temp_3
-                self.model.q[('phis')] = temp_3
-                for ebN in range(self.model.ebq_global['x'].shape[0]):
-                    for kb in range(self.model.ebq_global['x'].shape[1]):
-                        sdf,sdNormals = self.granular_sdf_Calc(self.model.ebq_global['x'][ebN,kb],i)
-                        if ( abs(sdf) < abs(self.ebq_global_phi_s[ebN,kb]) ):
-                            self.ebq_global_phi_s[ebN,kb]=sdf
-                            self.ebq_global_grad_phi_s[ebN,kb,:]=sdNormals
         else:
             corresponding_point_on_boundary = np.zeros((3,),'d')
-            for i, sdf, vel in zip(range(self.nParticles),
-                                   self.particle_sdfList, self.particle_velocityList):
+            for i in range(self.nParticles):
+                sdf = self.particles[i].sdf
+                vel = self.particles[i].vel
+                
                 for eN in range(self.model.q['x'].shape[0]):
                     for k in range(self.model.q['x'].shape[1]):
-                        self.particle_signed_distances[i, eN, k], self.particle_signed_distance_normals[i, eN, k] = sdf(0.0, self.model.q['x'][eN, k])
-                        self.particle_velocities[i, eN, k] = vel(0.0, self.model.q['x'][eN, k])
+                        self.particle_signed_distances[i, eN, k], sdfNormTemp = sdf(self.model.q['x'][eN, k])
+                        if self.particle_signed_distance_normals[i, eN, k].shape[0]==2:
+                            self.particle_signed_distance_normals[i, eN, k] = sdfNormTemp[:2]
+                            self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])[:2]
+                        else:
+                            self.particle_signed_distance_normals[i, eN, k] = sdfNormTemp
+                            self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])
+                            
                 self.model.q[('phis', i)] = self.particle_signed_distances[i]
                 self.model.q[('phis_vel', i)] = self.particle_velocities[i]
                 for ebN in range(self.model.ebq_global['x'].shape[0]):
                     for kb in range(self.model.ebq_global['x'].shape[1]):
-                        sdf_ebN_kb,sdNormals = sdf(0.0, self.model.ebq_global['x'][ebN,kb],)
+                        sdf_ebN_kb,sdNormals = sdf(self.model.ebq_global['x'][ebN,kb],)
                         if ( abs(sdf_ebN_kb) < abs(self.ebq_global_phi_s[ebN,kb]) ):
                             self.ebq_global_phi_s[ebN,kb]=sdf_ebN_kb
-                            self.ebq_global_grad_phi_s[ebN,kb,:]=sdNormals
+                            if self.ebq_global_grad_phi_s[ebN,kb,:].shape[0]==2:
+                                self.ebq_global_grad_phi_s[ebN,kb,:]=sdNormals[:2]
+                            else:
+                                self.ebq_global_grad_phi_s[ebN,kb,:]=sdNormals
+                                
                             for j in range(len(sdNormals)):
                                 corresponding_point_on_boundary[j] = self.model.ebq_global['x'][ebN,kb][j] - sdf_ebN_kb*sdNormals[j]
-                            self.ebq_particle_velocity_s[ebN,kb,:]=vel(0.0,corresponding_point_on_boundary)
-
+                            if self.ebq_particle_velocity_s[ebN,kb,:].shape[0]==2:
+                                self.ebq_particle_velocity_s[ebN,kb,:]=vel(corresponding_point_on_boundary)[:2]
+                            else:
+                                self.ebq_particle_velocity_s[ebN,kb,:]=vel(corresponding_point_on_boundary)
         if self.PRESSURE_model is not None:
             self.model.pressureModel = modelList[self.PRESSURE_model]
             self.model.q_p_fluid = modelList[self.PRESSURE_model].q[('u', 0)]
@@ -693,10 +672,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
 
         logEvent("updating {0} particles...".format(self.nParticles))
         for i in range(self.nParticles):
-            if self.granular_sdf_Calc is not None:
-                sdf = lambda x: self.granular_sdf_Calc(x,i)
-            else:
-                sdf = lambda x: self.particle_sdfList[i](0.0, x)
+            sdf = self.particles[i].sdf
 
             for j in range(mesh.nodeArray.shape[0]):
                 sdf_at_node, _ = sdf(mesh.nodeArray[j, :])
@@ -1083,12 +1059,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             self.phi_s[:] = 1e10
             self.phisField = np.ones(self.model.q[('u', 0)].shape, 'd') * 1e10
             for i in range(self.nParticles):
-                if self.granular_sdf_Calc is not None:
-                    vel = lambda x: self.granular_vel_Calc(x, i)
-                    sdf = lambda x: self.granular_sdf_Calc(x, i)
-                else:
-                    vel = lambda x: self.particle_velocityList[i](t, x)
-                    sdf = lambda x: self.particle_sdfList[i](t, x)
+                vel = self.particles[i].vel
+                sdf = self.particles[i].sdf
                     
                 for j in range(self.mesh.nodeArray.shape[0]):
                     vel_at_node = vel(self.mesh.nodeArray[j, :])
@@ -1097,8 +1069,13 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                         self.phi_s[j] = sdf_at_node
                 for eN in range(self.model.q['x'].shape[0]):
                     for k in range(self.model.q['x'].shape[1]):
-                        self.particle_signed_distances[i, eN, k], self.particle_signed_distance_normals[i, eN, k] = sdf(self.model.q['x'][eN, k])
-                        self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])
+                        self.particle_signed_distances[i, eN, k], sdfNormTemp = sdf(self.model.q['x'][eN, k])
+                        if self.particle_signed_distance_normals[i, eN, k].shape[0]==2:
+                            self.particle_signed_distance_normals[i, eN, k] = sdfNormTemp[:2]
+                            self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])[:2]
+                        else:
+                            self.particle_signed_distance_normals[i, eN, k] = sdfNormTemp
+                            self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])                                                 
                         if (abs(self.particle_signed_distances[i, eN, k]) < abs(self.phisField[eN, k])):
                             self.phisField[eN, k] = self.particle_signed_distances[i, eN, k]
                 corresponding_point_on_boundary = numpy.zeros((3,),'d')
@@ -1123,12 +1100,9 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                     assert False,"Use P1 or P2 for velocity"
                 distance_to_solid = 1e10
                 for i in range(self.nParticles):
-                    if self.granular_sdf_Calc is not None:
-                        vel = lambda x: self.granular_vel_Calc(x, i)
-                        sdf = lambda x: self.granular_sdf_Calc(x, i)
-                    else:
-                        vel = lambda x: self.particle_velocityList[i](t, x)
-                        sdf = lambda x: self.particle_sdfList[i](t, x)
+                    vel = self.particles[i].vel
+                    sdf = self.particles[i].sdf
+
                     distance_to_i_particle,_ = sdf(xyz)
                     if distance_to_solid > distance_to_i_particle:
                         vel_at_xyz = vel(xyz)
@@ -3025,11 +2999,9 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.q['velocityError'][:] = self.q[('velocity', 0)]
         OneLevelTransport.calculateAuxiliaryQuantitiesAfterStep(self)
         self.q['velocityError'] -= self.q[('velocity', 0)]
-        if self.q.has_key('phis') and self.coefficients.granular_sdf_Calc is not None:
-            self.q['phisError'] = self.q[('phis')]
-        else:  # this needs to be fixed for the case that multiple bodies are present
-            if self.q.has_key(('phis', 0)):
-                self.q['phisError'][:] = self.q[('phis', 0)]
+        # this needs to be fixed for the case that multiple bodies are present
+        if self.q.has_key(('phis', 0)):
+            self.q['phisError'][:] = self.q[('phis', 0)]
 
     def updateAfterMeshMotion(self):
         pass

@@ -330,18 +330,37 @@ def velRamp(t):
 #     else:
 #         return U
 
+class Particle:
 
+    def __init__(self, r_in, xc_in):
+        self.r = r_in
+        self.xc = xc_in
 
-def signedDistance(x):
-    return x[1]-L[1]/2
+    def sdf(self, x):
+        r = math.sqrt( (x[0]-self.xc[0])**2 + (x[1]-self.xc[1])**2)        
+        n = ((x[0]-self.xc[0])/r,(x[1]-self.xc[1])/r)
 
-def particle_sdf(t, x):
-    cx = 0.2
-    cy = 0.2
-    r = math.sqrt( (x[0]-cx)**2 + (x[1]-cy)**2)
-    n = ((x[0]-cx)/r,(x[1]-cy)/r)
-    return  r - 0.05,n
+        return (r-self.r, n)
 
-def particle_vel(t, x):
-    return (0.0,0.0)
+    def vel(self, x):
+        return (0.0, 0.0)
+        
+
+class Collection:
+
+    def __init__(self):
+        self.particles = []
+
+    def __getitem__(self, i):
+        return self.particles[i]
+
+    def add(self, r_in, x_in):
+        self.particles.append(Particle(r_in, x_in))
+
+    def size(self):
+        return len(self.particles)
+
+particles = Collection()
+particles.add(0.05, (0.2, 0.2))
+
 
