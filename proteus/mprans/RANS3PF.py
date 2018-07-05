@@ -18,7 +18,7 @@ from proteus.TransportCoefficients import TC_base
 from proteus.SubgridError import SGE_base
 from proteus.ShockCapturing import ShockCapturing_base
 import cRANS3PF
-
+import fastUpdate
 
 class SubgridError(proteus.SubgridError.SGE_base):
 
@@ -491,18 +491,36 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         if self.use_ball_as_particle==1:
             pass
         else:
+
+            self.particles.updateSDF(self.mesh.nodeArray,
+                                     self.model.q['x'],
+                                     self.model.ebq_global['x'],
+                                     self.phi_s,
+                                     self.particle_signed_distances,
+                                     self.particle_signed_distance_normals,
+                                     self.particle_velocities,
+                                     self.ebq_global_phi_s,
+                                     self.ebq_global_grad_phi_s,
+                                     self.ebq_particle_velocity_s)
+
+            """
+            
             corresponding_point_on_boundary = np.zeros((3,),'d')
             for i in range(self.nParticles):
                 sdf = self.particles[i].sdf
+                sdfNorm = self.particles[i].sdfNorm
                 vel = self.particles[i].vel
+
                 
                 for eN in range(self.model.q['x'].shape[0]):
                     for k in range(self.model.q['x'].shape[1]):
-                        self.particle_signed_distances[i, eN, k], sdfNormTemp = sdf(self.model.q['x'][eN, k])
+                        self.particle_signed_distances[i, eN, k] = sdf(self.model.q['x'][eN, k])
+                        
                         if self.particle_signed_distance_normals[i, eN, k].shape[0]==2:
-                            self.particle_signed_distance_normals[i, eN, k] = sdfNormTemp[:2]
+                            self.particle_signed_distance_normals[i, eN, k] = sdfNorm(self.model.q['x'][eN, k])[:2]
                             self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])[:2]
                         else:
+                            self.particle_signed_distance_normals[i, eN, k] = sdfNorm(self.model.q['x'][eN, k])
                             self.particle_signed_distance_normals[i, eN, k] = sdfNormTemp
                             self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])
                             
@@ -510,13 +528,14 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                 self.model.q[('phis_vel', i)] = self.particle_velocities[i]
                 for ebN in range(self.model.ebq_global['x'].shape[0]):
                     for kb in range(self.model.ebq_global['x'].shape[1]):
-                        sdf_ebN_kb,sdNormals = sdf(self.model.ebq_global['x'][ebN,kb],)
+                        sdf_ebN_kb = sdf(self.model.ebq_global['x'][ebN,kb])
+                        sdNormals = sdfNorm(self.model.ebq_global['x'][ebN,kb])
                         if ( abs(sdf_ebN_kb) < abs(self.ebq_global_phi_s[ebN,kb]) ):
                             self.ebq_global_phi_s[ebN,kb]=sdf_ebN_kb
                             if self.ebq_global_grad_phi_s[ebN,kb,:].shape[0]==2:
-                                self.ebq_global_grad_phi_s[ebN,kb,:]=sdNormals[:2]
+                                self.ebq_global_grad_phi_s[ebN,kb,:] = sdNormals[:2]
                             else:
-                                self.ebq_global_grad_phi_s[ebN,kb,:]=sdNormals
+                                self.ebq_global_grad_phi_s[ebN,kb,:] = sdNormals
                                 
                             for j in range(len(sdNormals)):
                                 corresponding_point_on_boundary[j] = self.model.ebq_global['x'][ebN,kb][j] - sdf_ebN_kb*sdNormals[j]
@@ -524,6 +543,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                                 self.ebq_particle_velocity_s[ebN,kb,:]=vel(corresponding_point_on_boundary)[:2]
                             else:
                                 self.ebq_particle_velocity_s[ebN,kb,:]=vel(corresponding_point_on_boundary)
+            """
         if self.PRESSURE_model is not None:
             self.model.pressureModel = modelList[self.PRESSURE_model]
             self.model.q_p_fluid = modelList[self.PRESSURE_model].q[('u', 0)]
@@ -671,13 +691,14 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.phi_s = numpy.ones(mesh.nodeArray.shape[0], 'd')*1e10
 
         logEvent("updating {0} particles...".format(self.nParticles))
-        for i in range(self.nParticles):
-            sdf = self.particles[i].sdf
+        if self.use_ball_as_particle==0:
+            for i in range(self.nParticles):
+                sdf = self.particles[i].sdf
 
-            for j in range(mesh.nodeArray.shape[0]):
-                sdf_at_node, _ = sdf(mesh.nodeArray[j, :])
-                if (abs(sdf_at_node) < abs(self.phi_s[j])):
-                        self.phi_s[j] = sdf_at_node
+                for j in range(mesh.nodeArray.shape[0]):
+                    sdf_at_node = sdf(mesh.nodeArray[j, :])
+                    if (abs(sdf_at_node) < abs(self.phi_s[j])):
+                            self.phi_s[j] = sdf_at_node
 
         # cek we eventually need to use the local element diameter
         self.eps_density = self.epsFact_density * mesh.h
@@ -1055,21 +1076,39 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.model.ebqe[('uncorrectedVelocity',0)][:] = self.model.ebqe[('velocity',0)]
 
         logEvent("updating {0} particles...".format(self.nParticles))
+
         if self.use_ball_as_particle == 0:
+
+            self.particles.updateSDF(self.mesh.nodeArray,
+                                     self.model.q['x'],
+                                     self.model.ebq_global['x'],
+                                     self.phi_s,
+                                     self.particle_signed_distances,
+                                     self.particle_signed_distance_normals,
+                                     self.particle_velocities,
+                                     self.ebq_global_phi_s,
+                                     self.ebq_global_grad_phi_s,
+                                     self.ebq_particle_velocity_s)
+            """
+
             self.phi_s[:] = 1e10
             self.phisField = np.ones(self.model.q[('u', 0)].shape, 'd') * 1e10
             for i in range(self.nParticles):
                 vel = self.particles[i].vel
                 sdf = self.particles[i].sdf
-                    
+                sdfNorm = self.particles[i].sdfNorm
+                
                 for j in range(self.mesh.nodeArray.shape[0]):
                     vel_at_node = vel(self.mesh.nodeArray[j, :])
-                    sdf_at_node, sdNormals = sdf(self.mesh.nodeArray[j, :])
+                    sdf_at_node = sdf(self.mesh.nodeArray[j, :])
+                    sdNormals = sdfNorm(self.mesh.nodeArray[j,:])
                     if (abs(sdf_at_node) < abs(self.phi_s[j])):
                         self.phi_s[j] = sdf_at_node
+
                 for eN in range(self.model.q['x'].shape[0]):
                     for k in range(self.model.q['x'].shape[1]):
-                        self.particle_signed_distances[i, eN, k], sdfNormTemp = sdf(self.model.q['x'][eN, k])
+                        self.particle_signed_distances[i, eN, k] = sdf(self.model.q['x'][eN, k])
+                        sdfNormTemp = sdfNorm(self.model.q['x'][eN, k])
                         if self.particle_signed_distance_normals[i, eN, k].shape[0]==2:
                             self.particle_signed_distance_normals[i, eN, k] = sdfNormTemp[:2]
                             self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])[:2]
@@ -1078,19 +1117,24 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                             self.particle_velocities[i, eN, k] = vel(self.model.q['x'][eN, k])                                                 
                         if (abs(self.particle_signed_distances[i, eN, k]) < abs(self.phisField[eN, k])):
                             self.phisField[eN, k] = self.particle_signed_distances[i, eN, k]
+
                 corresponding_point_on_boundary = numpy.zeros((3,),'d')
                 for ebN in range(self.model.ebq_global['x'].shape[0]):
                     for kb in range(self.model.ebq_global['x'].shape[1]):
-                        sdf_at_quad_pt,sdNormals = sdf(self.model.ebq_global['x'][ebN,kb])
+                        sdf_at_quad_pt = sdf(self.model.ebq_global['x'][ebN,kb])
+                        sdNormals = sdfNorm(self.model.ebq_global['x'][ebN,kb])
                         if ( abs(sdf_at_quad_pt) < abs(self.ebq_global_phi_s[ebN,kb]) ):
                             self.ebq_global_phi_s[ebN,kb]=sdf_at_quad_pt
                             self.ebq_global_grad_phi_s[ebN,kb,:]=sdNormals
                             for j in range(len(sdNormals)):
                                 corresponding_point_on_boundary[j] = self.model.ebq_global['x'][ebN,kb][j] - sdf_at_quad_pt*sdNormals[j]
                             self.ebq_particle_velocity_s[ebN,kb,:]=vel(0.0,corresponding_point_on_boundary)
+
             self.model.q[('phis')] = self.phisField
 
-            #Update velocity inside the particle
+
+            ## Update velocity inside the particle (Should only apply for SBM)
+
             for ci_g_dof,ci_fg_dof in self.model.dirichletConditions[0].global2freeGlobal.iteritems():
                 if isinstance(self.model.u[0].femSpace,C0_AffineLinearOnSimplexWithNodalBasis):
                     xyz = self.model.mesh.nodeArray[ci_g_dof,:]
@@ -1111,6 +1155,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                     dof = self.model.offset[ci] + self.model.stride[ci]*ci_fg_dof
                     if self.model.isActiveDOF[dof] < 0.5:
                         self.model.u[ci].dof[ci_g_dof] = vel_at_xyz[ci]
+            """
 
         if self.model.comm.isMaster():
             self.wettedAreaHistory.write("%21.16e\n" % (self.wettedAreas[-1],))

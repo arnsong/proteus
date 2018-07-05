@@ -1192,6 +1192,7 @@ namespace proteus
                                                                        fluid_outward_normal[2]*grad_w[2]) +
                               C_surf*rel_vel_norm*(v-v_s)*rho) + dV*(1.0 - H_s)*C_vol*(v-v_s)*rho;
             //always 3D for particle centroids
+            // *** Need to make sure that centers are being passed to this function ***
             r_x = x - center[0];
             r_y = y - center[1];
             r_z = z - center[2];

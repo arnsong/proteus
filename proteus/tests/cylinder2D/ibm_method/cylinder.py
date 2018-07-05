@@ -8,7 +8,7 @@ from proteus.Profiling import logEvent
 from proteus import Context
 
 ct = Context.Options([
-    ("T", 4.0, "Time interval [0, T]"),
+    ("T", 1.0, "Time interval [0, T]"),
     ("Refinement",4, "refinement"),
     ("onlySaveFinalSolution",False,"Only save the final solution"),
     ("vspaceOrder",1,"FE space for velocity"),
@@ -330,6 +330,13 @@ def velRamp(t):
 #     else:
 #         return U
 
+use_ball_as_particle = 1
+nParticles = 1
+ball_center = np.array([[0.2, 0.2, 0.0]])
+ball_radius = np.array([0.05])
+ball_velocity = np.array([[0.0, 0.0, 0.0]])
+ball_angular_velocity = np.array([[0.0, 0.0, 0.0]])
+
 class Particle:
 
     def __init__(self, r_in, xc_in):
@@ -338,10 +345,15 @@ class Particle:
 
     def sdf(self, x):
         r = math.sqrt( (x[0]-self.xc[0])**2 + (x[1]-self.xc[1])**2)        
+
+        return r-self.r
+
+    def sdfNorm(self, x):
+        r = math.sqrt( (x[0]-self.xc[0])**2 + (x[1]-self.xc[1])**2)        
         n = ((x[0]-self.xc[0])/r,(x[1]-self.xc[1])/r)
 
-        return (r-self.r, n)
-
+        return n
+    
     def vel(self, x):
         return (0.0, 0.0)
         
